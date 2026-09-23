@@ -2,10 +2,10 @@
 # don't need Docker installed locally.
 #
 # After the first successful run, make the package PUBLIC so SaladCloud can
-# pull it:  github.com/<you>?tab=packages -> pearl-salad -> Package settings
+# pull it:  github.com/<you>?tab=packages -> pearl-salad-nvidia -> Package settings
 #           -> Change visibility -> Public
 #
-# Image name: ghcr.io/<you>/pearl-salad
+# Image name: ghcr.io/<you>/pearl-salad-nvidia
 name: build-and-push
 
 on:
@@ -32,7 +32,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - id: repo
-        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/pearl-salad" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/pearl-salad-nvidia" >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@v6
         with:

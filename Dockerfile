@@ -1,42 +1,45 @@
 # ============================================================================
-#  Pearl (PRL, pearlhash) GPU miner for SaladCloud  (AMD GPU classes,
-#  ROCm-on-WSL / DXG)
+#  Pearl (PRL, pearlhash) GPU miner for SaladCloud  (NVIDIA GPU classes)
 #
-#  Forked from the Quai/KawPow image (wildrig-salad). Pearl is a
-#  proof-of-useful-work chain: every share is an int8 matrix-multiply plus a
-#  STARK proof, so hashrates read in TH/s and shares are heavy.
+#  Sibling of pearl-salad (the AMD / ROCm image). Same share-probing
+#  entrypoint, CUDA base instead of ROCm. Pearl is a proof-of-useful-work
+#  chain: every share is an int8 matrix-multiply plus a STARK proof, so
+#  hashrates read in TH/s and shares are heavy. NVIDIA is where pearlhash
+#  runs best (RTX 4090 ~230-290 TH/s, RTX 5090 ~320 TH/s).
 #
 #  Ships FOUR miners and lets the entrypoint pick the first one that actually
 #  produces accepted shares on the node it lands on:
-#    1. krig-miner    (Kryptex; ROCm/HIP backend, RDNA2/3/4, 0% devfee)
-#    2. SRBMiner-MULTI (pearlhash on AMD+NVIDIA, 2% devfee)
-#    3. BzMiner        (pearl on AMD+NVIDIA, 2% devfee)
-#    4. WildRig-Multi  (pearlhash, AMD support fixed in 0.51.2, 0% devfee;
-#                       known to struggle under ROCm OpenCL - last resort)
-#  TeamRedMiner is gone: it has no pearlhash support.
+#    1. krig-miner     (Kryptex; CUDA backend, 0% devfee)
+#    2. SRBMiner-MULTI (pearlhash on NVIDIA, 2% devfee)
+#    3. BzMiner        (pearl on NVIDIA, 2% devfee)
+#    4. WildRig-Multi  (pearlhash, 0% devfee; NVIDIA path may go through
+#                       OpenCL, which NVIDIA does not fully support under
+#                       WSL - so it is last)
 #
-#  How AMD GPUs work on SaladCloud (per Salad's AMD/ROCm docs):
-#    * The GPU is /dev/dxg (WSL bridge). There is NO /dev/kfd or /dev/dri.
-#    * The host injects librocdxg (/opt/rocm-host/lib), the WSL driver libs
-#      (/usr/lib/wsl/lib) and a DXG-capable amd-smi (/opt/rocm-wsl), and sets
-#      HSA_ENABLE_DXG_DETECTION=1 plus the LD_LIBRARY_PATH / PATH ordering.
-#    * The host does NOT provide a ROCm runtime - the image must ship ROCm
-#      7.1 or newer. Anything older fails with HSA_STATUS_ERROR_OUT_OF_RESOURCES.
-#    * NEVER assign LD_LIBRARY_PATH / PYTHONPATH in the image or entrypoint -
-#      that erases the injected bridge and the GPU disappears.
-#    * `rocminfo` is the official readiness check; the entrypoint runs it first.
+#  How NVIDIA GPUs work on SaladCloud:
+#    * Salad nodes are Windows PCs; containers run under WSL2 with the NVIDIA
+#      container toolkit. The host injects the driver (libcuda.so.1,
+#      libnvidia-ml.so.1, nvidia-smi) - the image must NOT ship a driver.
+#    * The image must be a CUDA image. This one is nvidia/cuda 12.6 runtime,
+#      which needs host driver >= 560 (any RTX 50-series node has that; older
+#      nodes are usually on 55x+).
+#    * NVIDIA_VISIBLE_DEVICES=all and NVIDIA_DRIVER_CAPABILITIES=compute,utility
+#      come from the base image; they are what tells the toolkit to inject
+#      the driver. Don't unset them.
+#    * `nvidia-smi` is the readiness check; the entrypoint runs it first.
+#    * Never mix NVIDIA and AMD classes in one container group.
 #
 #  ---- BUILD & PUSH ---------------------------------------------------------
 #  No Docker locally? Push this folder to a GitHub repo - the included
-#  .github/workflows/build.yml builds and pushes ghcr.io/<you>/pearl-salad
+#  .github/workflows/build.yml builds and pushes ghcr.io/<you>/pearl-salad-nvidia
 #  automatically (see README.md).  With Docker:
-#    docker build -t YOURUSER/pearl-salad:latest .
-#    docker push  YOURUSER/pearl-salad:latest
+#    docker build -t YOURUSER/pearl-salad-nvidia:latest .
+#    docker push  YOURUSER/pearl-salad-nvidia:latest
 #
 #  ---- SaladCloud container-group settings ----------------------------------
-#    Image Name : ghcr.io/<you>/pearl-salad:latest   (must be a PUBLIC image)
+#    Image Name : ghcr.io/<you>/pearl-salad-nvidia:latest   (must be PUBLIC)
 #    Replicas   : 1   (for testing)
-#    GPU        : an AMD class (RX 9000 / RX 7000 / RX 6000). Do NOT mix with NVIDIA.
+#    GPU        : an NVIDIA class (RTX 3060 .. RTX 5090). Do NOT mix with AMD.
 #    vCPU / RAM : 2 vCPU / 4 GB
 #    Storage    : minimum
 #    Priority   : Batch (cheapest, interruptible - fine for mining)
@@ -63,26 +66,20 @@
 #    bills you BEFORE scaling replicas.
 # ============================================================================
 
-# Salad-recommended AMD base (ROCm 7.2, ubuntu 24.04). Includes rocminfo and
-# the HIP runtime (libamdhip64) that krig-miner needs.
-FROM rocm/dev-ubuntu-24.04:7.2
+# CUDA runtime image: ships cudart/nvrtc for miners that load them
+# dynamically, but no driver. ~2 GB, much smaller than the ROCm sibling.
+FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# OpenCL runtime + ICD loader so the OpenCL miners can see the AMD platform.
-# Package name differs across ROCm releases, so try both. The ROCm package can
-# register the AMD platform twice (two .icd files); keep exactly one so the
-# GPU isn't enumerated twice.
+# OpenCL ICD loader + NVIDIA ICD file, for WildRig. The container toolkit
+# mounts libnvidia-opencl.so.1 from the host when NVIDIA_DRIVER_CAPABILITIES
+# includes "compute"; the ICD file just tells the loader where to look.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates wget curl ocl-icd-libopencl1 clinfo procps \
-    && (apt-get install -y --no-install-recommends rocm-opencl-runtime \
-        || apt-get install -y --no-install-recommends rocm-opencl) \
-    && mkdir -p /etc/OpenCL/vendors \
-    && (ls /etc/OpenCL/vendors/amdocl64.icd >/dev/null 2>&1 \
-        || echo "/opt/rocm/lib/libamdocl64.so" > /etc/OpenCL/vendors/amdocl64.icd) \
     && rm -rf /var/lib/apt/lists/* \
-    && for f in /etc/OpenCL/vendors/*; do [ "$f" = /etc/OpenCL/vendors/amdocl64.icd ] || rm -f "$f"; done \
-    && ls -la /etc/OpenCL/vendors && cat /etc/OpenCL/vendors/*
+    && mkdir -p /etc/OpenCL/vendors \
+    && echo "libnvidia-opencl.so.1" > /etc/OpenCL/vendors/nvidia.icd
 
 # Each miner tarball lays itself out differently (some have a top-level dir,
 # some don't). Extract into a scratch dir, find the binary, and move whatever
@@ -129,9 +126,6 @@ RUN wget -qO /tmp/w.tgz \
  && [ -n "$bin" ] && mv "$(dirname "$bin")" /opt/wildrig \
  && chmod +x /opt/wildrig/wildrig-multi && rm -rf /tmp/w /tmp/w.tgz \
  && ls -la /opt/wildrig
-
-# NOTE: no LD_LIBRARY_PATH / HSA_ENABLE_DXG_DETECTION here on purpose -
-# SaladCloud injects them; setting them in the image breaks GPU enumeration.
 
 # Runtime defaults - override these in the SaladCloud env vars
 ENV POOL=stratum+tcp://ca.pearl.herominers.com:1200 \

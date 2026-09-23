@@ -1,12 +1,9 @@
 #!/bin/sh
-# Entrypoint for the Pearl (PRL, pearlhash) SaladCloud AMD image.
-# Do NOT export LD_LIBRARY_PATH or PYTHONPATH here - Salad injects them.
+# Entrypoint for the Pearl (PRL, pearlhash) SaladCloud NVIDIA image.
 #
 # Tries each miner in $MINERS in order. A miner "works" once it logs an
 # accepted share; if it exits, or produces no accepted share within
 # $NO_SHARE_TIMEOUT seconds, it is killed and the next miner is tried.
-# (WildRig under ROCm OpenCL can run forever without hashing - hence the
-# share-based check rather than an exit-code check.)
 
 set -u
 
@@ -28,19 +25,21 @@ MINERS="${MINERS:-krig srb bz wildrig}"
 NO_SHARE_TIMEOUT="${NO_SHARE_TIMEOUT:-300}"
 LOG=/tmp/miner.log
 
-echo "=== GPU readiness check (rocminfo) ==="
-echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-<unset>}"
-GFX=""
-if command -v rocminfo >/dev/null 2>&1; then
-  ROCMINFO="$(rocminfo 2>&1)"
-  echo "$ROCMINFO" | grep -E 'Name:|Marketing Name|gfx|HSA_STATUS' | head -20
-  GFX="$(echo "$ROCMINFO" | grep -oE 'gfx[0-9a-f]+' | head -1)"
+echo "=== GPU readiness check (nvidia-smi) ==="
+echo "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-<unset>}  NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-<unset>}"
+GPU_NAME=""
+if command -v nvidia-smi >/dev/null 2>&1; then
+  if nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1; then
+    GPU_NAME="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+  else
+    echo "nvidia-smi failed - the host driver was not injected. Is this an NVIDIA GPU class?"
+  fi
 else
-  echo "rocminfo not found in image (unexpected)"
+  echo "nvidia-smi not found - the container toolkit did not inject the driver. Is this an NVIDIA GPU class?"
 fi
-echo "=== GPU arch: ${GFX:-unknown}  miner order: $MINERS ==="
+echo "=== GPU: ${GPU_NAME:-unknown}  miner order: $MINERS ==="
 
-echo "=== OpenCL platforms (clinfo) ==="
+echo "=== OpenCL platforms (clinfo) - only matters for WildRig ==="
 clinfo -l 2>&1 | head -20 || true
 
 # Pool region auto-select. Salad nodes are spread worldwide and Pearl shares
@@ -86,7 +85,7 @@ miner_cmd() {
   case "$1" in
     krig)
       echo /opt/krig/krig-miner --coin pearl -o "$POOL_HOSTPORT" -u "$USER_ARG" -p x \
-        --no-tui --no-cuda ${KRIG_EXTRA_ARGS:-}
+        --no-tui --no-rocm ${KRIG_EXTRA_ARGS:-}
       ;;
     srb)
       echo /opt/srb/SRBMiner-MULTI --algorithm pearlhash --pool "$POOL_HOSTPORT" \
@@ -99,7 +98,7 @@ miner_cmd() {
       ;;
     wildrig)
       echo /opt/wildrig/wildrig-multi --algo pearlhash --url "$POOL" --user "$USER_ARG" \
-        --pass x --opencl-platforms amd --no-adl --no-igcl --no-sysfs \
+        --pass x --opencl-platforms nvidia --no-adl --no-igcl --no-sysfs \
         ${WILDRIG_EXTRA_ARGS:-}
       ;;
     *)
