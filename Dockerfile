@@ -75,6 +75,11 @@ FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# Set by the build workflow to the git tag (v1.2.3) or branch; the entrypoint
+# prints it so the Salad log says which image version a node is running.
+ARG IMAGE_VERSION=dev
+ENV IMAGE_VERSION=${IMAGE_VERSION}
+
 # OpenCL ICD loader + NVIDIA ICD file, for WildRig. The container toolkit
 # mounts libnvidia-opencl.so.1 from the host when NVIDIA_DRIVER_CAPABILITIES
 # includes "compute"; the ICD file just tells the loader where to look.

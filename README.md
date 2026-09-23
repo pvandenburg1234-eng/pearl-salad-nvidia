@@ -38,7 +38,9 @@ launch. Test with one replica for 24 h before scaling.
 1. Push this folder to a **public** GitHub repository (this one is
    `pearl-salad-nvidia`).
 2. On GitHub open the **Actions** tab — the `build-and-push` workflow runs
-   automatically (~5 min) and pushes `ghcr.io/<you>/pearl-salad-nvidia:latest`.
+   automatically (~5 min). A push to `main` updates
+   `ghcr.io/<you>/pearl-salad-nvidia:latest`; a git tag `vX.Y.Z` publishes
+   `ghcr.io/<you>/pearl-salad-nvidia:vX.Y.Z` (see **Releases** below).
 3. Make the package public: your GitHub profile → **Packages** →
    `pearl-salad-nvidia` → **Package settings** → **Change visibility** → Public.
    SaladCloud can only pull public images (or you'd have to configure registry
@@ -59,7 +61,7 @@ Portal → **Container Groups → Deploy**:
 
 | Setting | Value |
 |---|---|
-| Image | `ghcr.io/<you>/pearl-salad-nvidia:latest` |
+| Image | `ghcr.io/<you>/pearl-salad-nvidia:v0.1.0` — pin a release tag, not `:latest`, so a Batch reallocation can't pull an untested build |
 | Replicas | `1` for testing |
 | GPU | an **NVIDIA** class. RTX 40 / 50 series give the best TH/s per dollar. Don't put AMD classes in the same group; use `pearl-salad` for those. |
 | vCPU / RAM | 2 vCPU / 4 GB |
@@ -116,6 +118,29 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
   the `*_EXTRA_ARGS` variables once you have it.
 - **Overclocking / power limits.** krig-miner has `--gpu-plimit` and friends,
   but they need NVML write access, which Salad containers don't have.
+
+## Releases
+
+Images are versioned with git tags. The workflow builds every push to `main`
+as `:latest` (for testing), and every tag `vX.Y.Z` as `:vX.Y.Z` and `:vX.Y`.
+Release tags never move, so Salad groups pinned to one keep running the exact
+build you tested. The entrypoint prints the version as its first log line.
+
+To cut a release after testing `:latest` on one replica:
+
+```bash
+git tag -a v1.0.0 -m "what changed" && git push origin v1.0.0
+```
+
+Bump the **patch** number for miner version bumps and doc fixes, **minor** for
+new behaviour (new miner, new pool, new env var), **major** if an env var
+changes meaning or a default pool switches. This image starts at 0.x because
+no miner has been verified on a Salad NVIDIA node yet; v1.0.0 is for the
+first verified build.
+
+| Version | Date | Notes |
+|---|---|---|
+| v0.1.0 | 2026-09-23 | First release. Same entrypoint as pearl-salad v1.0.0; unverified on NVIDIA |
 
 ## Files
 

@@ -25,6 +25,7 @@ MINERS="${MINERS:-krig srb bz wildrig}"
 NO_SHARE_TIMEOUT="${NO_SHARE_TIMEOUT:-300}"
 LOG=/tmp/miner.log
 
+echo "=== pearl-salad-nvidia image version: ${IMAGE_VERSION:-unknown} ==="
 echo "=== GPU readiness check (nvidia-smi) ==="
 echo "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-<unset>}  NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-<unset>}"
 GPU_NAME=""
@@ -147,10 +148,22 @@ miner_cmd() {
   esac
 }
 
-# Accepted-share detector. Each miner words it differently; WildRig's stats
-# table also prints "Accepted: -" which must NOT count.
+# Accepted-share detector. Each miner words it differently, and every miner
+# also prints periodic stats that contain the word "accepted" with a zero
+# count, which must NOT count:
+#   krig     "shares: 0 accepted 0 stale 0 rejected"   (seen on Salad)
+#   wildrig  "Accepted: -"
+# So: keep lines mentioning accept, drop the ones where the count is 0 / -.
+#   "N accepted"   (krig)     -> N must be nonzero
+#   "Accepted: N"  (wildrig)  -> N must be nonzero
+#   anything else that says accept ("share accepted", "Accepted!") counts.
 has_accepted() {
-  grep -iE 'accepted' "$LOG" 2>/dev/null | grep -vE 'Accepted: ' | grep -qiE 'accept'
+  grep -iE 'accept' "$LOG" 2>/dev/null | grep -viE 'no accepted|not accepted' | awk '
+    { l = tolower($0) }
+    l ~ /[0-9]+ accepted/        { if (l ~ /(^|[^0-9.])[1-9][0-9]* accepted/) found = 1; next }
+    l ~ /accepted:? *[-0-9]/     { if (l ~ /accepted:? *[1-9]/) found = 1; next }
+    { found = 1 }
+    END { exit found ? 0 : 1 }'
 }
 
 run_miner() {

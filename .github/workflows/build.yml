@@ -6,11 +6,19 @@
 #           -> Change visibility -> Public
 #
 # Image name: ghcr.io/<you>/pearl-salad-nvidia
+#
+# Tags produced:
+#   push to main        -> :latest, :sha-<short sha>
+#   git tag vX.Y.Z      -> :vX.Y.Z, :vX.Y, :sha-<short sha>   (latest untouched)
+# Deploy Salad groups on a :vX.Y.Z tag so a reallocation can't silently pick
+# up a newer build. Cut a release with:
+#   git tag -a v1.2.3 -m "what changed" && git push origin v1.2.3
 name: build-and-push
 
 on:
   push:
     branches: [main]
+    tags: ['v*.*.*']
   workflow_dispatch:
 
 permissions:
@@ -31,16 +39,23 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - id: repo
-        run: echo "name=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/pearl-salad-nvidia" >> "$GITHUB_OUTPUT"
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/pearl-salad-nvidia
+          tags: |
+            type=semver,pattern=v{{version}}
+            type=semver,pattern=v{{major}}.{{minor}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,prefix=sha-
 
       - uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          tags: |
-            ${{ steps.repo.outputs.name }}:latest
-            ${{ steps.repo.outputs.name }}:v${{ github.run_number }}
-            ${{ steps.repo.outputs.name }}:${{ github.sha }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            IMAGE_VERSION=${{ steps.meta.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
