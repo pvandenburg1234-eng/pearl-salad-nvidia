@@ -44,17 +44,21 @@ clinfo -l 2>&1 | head -20 || true
 
 # Pool region auto-select. Salad nodes are spread worldwide and Pearl shares
 # are heavy STARK proofs, so a far-away pool costs stale rejects. If the pool
-# is HeroMiners, time a TCP connect to each region and use the fastest.
-# Disable with POOL_AUTO=0 or by setting a non-HeroMiners POOL.
-if [ "${POOL_AUTO:-1}" = "1" ] && echo "$POOL" | grep -qE 'pearl\.herominers\.com'; then
+# is HeroMiners or Kryptex, time a TCP connect to each of that pool's regions
+# and use the fastest. Disable with POOL_AUTO=0 or by using another pool.
+#
+# probe_regions LABEL SUFFIX DEFAULT_PORT REGION...
+#   Probes "<region><suffix>:<port>" for each region and rewrites POOL to the
+#   fastest one, keeping the scheme and port from the original POOL.
+probe_regions() {
+  label="$1"; suffix="$2"; defport="$3"; shift 3
   scheme="$(echo "$POOL" | sed -nE 's#^([a-z+]+://).*#\1#p')"
   port="$(echo "$POOL" | sed -nE 's#.*:([0-9]+)$#\1#p')"
-  port="${port:-1200}"
-  POOL_REGIONS="${POOL_REGIONS:-ca us us2 us3 de es fi fr ru tr hk sg kr au br}"
-  echo "=== Probing HeroMiners Pearl regions on port $port ==="
+  port="${port:-$defport}"
+  echo "=== Probing $label regions on port $port ==="
   best=""; best_ms=999999
-  for r in $POOL_REGIONS; do
-    h="$r.pearl.herominers.com"
+  for r in "$@"; do
+    h="$r$suffix"
     t="$(curl -s -o /dev/null --max-time 3 -w '%{time_connect}' "telnet://$h:$port" 2>/dev/null </dev/null)"
     ms="$(echo "${t:-0}" | awk '{ printf "%d", $1 * 1000 }')"
     if [ "$ms" -gt 0 ]; then
@@ -65,12 +69,32 @@ if [ "${POOL_AUTO:-1}" = "1" ] && echo "$POOL" | grep -qE 'pearl\.herominers\.co
     fi
   done
   if [ -n "$best" ]; then
-    POOL="${scheme:-stratum+tcp://}$best.pearl.herominers.com:$port"
+    POOL="${scheme:-stratum+tcp://}$best$suffix:$port"
     echo "=== Using nearest region: $best (${best_ms} ms) -> $POOL ==="
   else
     echo "=== No region reachable by probe; keeping $POOL ==="
   fi
+}
+
+if [ "${POOL_AUTO:-1}" = "1" ]; then
+  if echo "$POOL" | grep -qE 'pearl\.herominers\.com'; then
+    # shellcheck disable=SC2086
+    probe_regions "HeroMiners Pearl" ".pearl.herominers.com" 1200 \
+      ${POOL_REGIONS:-ca us us2 us3 de es fi fr ru tr hk sg kr au br}
+  elif echo "$POOL" | grep -qE 'prl(-[a-z]+)?\.kryptex\.network'; then
+    # shellcheck disable=SC2086
+    probe_regions "Kryptex Pearl" ".kryptex.network" 7048 \
+      ${POOL_REGIONS:-prl prl-us prl-eu prl-br prl-sg prl-hk prl-ru prl-ae}
+  fi
 fi
+
+# krig-miner is Kryptex's miner and refuses every other pool ("is not the
+# official Kryptex PRL pool"), retrying forever instead of exiting. Only run
+# it when POOL is Kryptex; otherwise skip it so the other miners start at once.
+case "$POOL" in
+  *kryptex.network*) KRIG_OK=1 ;;
+  *) KRIG_OK=0 ;;
+esac
 
 # Pool URL without the stratum+tcp:// scheme, for miners that want host:port.
 POOL_HOSTPORT="$(echo "$POOL" | sed -E 's#^[a-z+]+://##')"
@@ -117,6 +141,10 @@ run_miner() {
   name="$1"
   if [ ! -d "/opt/$name" ]; then
     echo "=== [$name] not installed in this image - skipping ==="
+    return 1
+  fi
+  if [ "$name" = krig ] && [ "$KRIG_OK" = 0 ]; then
+    echo "=== [krig] only works with Kryptex pools (POOL=$POOL) - skipping ==="
     return 1
   fi
   : > "$LOG"
