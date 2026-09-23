@@ -7,6 +7,21 @@
 
 set -u
 
+# This script is PID 1. Without a trap, PID 1 ignores SIGTERM and a Salad
+# stop/reallocation waits out the grace period and SIGKILLs everything.
+cleanup() {
+  echo "=== SIGTERM received - stopping miner ==="
+  pkill -TERM -f '/opt/' 2>/dev/null
+  sleep 2
+  pkill -KILL -f '/opt/' 2>/dev/null
+  exit 0
+}
+trap cleanup TERM INT
+
+# Interruptible sleep: a trap can't run while a foreground `sleep` is active,
+# so background it and wait (wait IS interruptible).
+isleep() { sleep "$1" & wait $! 2>/dev/null; }
+
 if [ "${WALLET:-REPLACE_WITH_YOUR_WALLET}" = "REPLACE_WITH_YOUR_WALLET" ]; then
   echo "ERROR: set the WALLET environment variable in your SaladCloud container group." >&2
   exit 1
@@ -22,7 +37,9 @@ WORKER_NAME="$(echo "$WORKER_NAME" | tr -cd 'A-Za-z0-9_-' | cut -c1-24)"
 USER_ARG="$WALLET.$WORKER_NAME"
 
 MINERS="${MINERS:-krig srb bz wildrig}"
-NO_SHARE_TIMEOUT="${NO_SHARE_TIMEOUT:-300}"
+# Pearl shares are STARK proofs; on a weak card at a not-yet-adjusted pool
+# difficulty the first one can take several minutes, so give it 10.
+NO_SHARE_TIMEOUT="${NO_SHARE_TIMEOUT:-600}"
 LOG=/tmp/miner.log
 
 echo "=== pearl-salad-nvidia image version: ${IMAGE_VERSION:-unknown} ==="
@@ -148,22 +165,25 @@ miner_cmd() {
   esac
 }
 
-# Accepted-share detector. Each miner words it differently, and every miner
-# also prints periodic stats that contain the word "accepted" with a zero
-# count, which must NOT count:
-#   krig     "shares: 0 accepted 0 stale 0 rejected"   (seen on Salad)
-#   wildrig  "Accepted: -"
-# So: keep lines mentioning accept, drop the ones where the count is 0 / -.
-#   "N accepted"   (krig)     -> N must be nonzero
-#   "Accepted: N"  (wildrig)  -> N must be nonzero
-#   anything else that says accept ("share accepted", "Accepted!") counts.
+# Accepted-share detector. Each miner words it differently, and miners also
+# print periodic stats containing "accepted" with a zero count, which must
+# NOT count:
+#   krig     "share accepted: GPU0 108ms"              -> counts
+#   krig     "shares: 0 accepted 0 stale 0 rejected"   -> must not count
+#   SRBMiner "GPU0[t0] share accepted [ 70ms]"         -> counts
+#   WildRig  "Accepted: -" (stats table)               -> must not count
+# Rules: "N accepted" needs N>0, "Accepted: N" needs N>0, and anything else
+# must be share wording - never bare "accept" (that matched "accepting jobs"
+# / "accepted connection" and could lock MINERS onto a miner that isn't hashing).
 has_accepted() {
-  grep -iE 'accept' "$LOG" 2>/dev/null | grep -viE 'no accepted|not accepted' | awk '
-    { l = tolower($0) }
-    l ~ /[0-9]+ accepted/        { if (l ~ /(^|[^0-9.])[1-9][0-9]* accepted/) found = 1; next }
-    l ~ /accepted:? *[-0-9]/     { if (l ~ /accepted:? *[1-9]/) found = 1; next }
-    { found = 1 }
-    END { exit found ? 0 : 1 }'
+  grep -iE 'accept' "$LOG" 2>/dev/null \
+    | grep -viE 'no accepted|not accepted|accepting|accepted connection' \
+    | awk '
+      { l = tolower($0) }
+      l ~ /[0-9]+ accepted/    { if (l ~ /(^|[^0-9.])[1-9][0-9]* accepted/) found = 1; next }
+      l ~ /accepted:? *[-0-9]/ { if (l ~ /accepted:? *[1-9]/) found = 1; next }
+      l ~ /shares? accepted|accepted shares?|accepted \(|accepted \[|accepted!/ { found = 1 }
+      END { exit found ? 0 : 1 }'
 }
 
 run_miner() {
@@ -179,30 +199,45 @@ run_miner() {
   : > "$LOG"
   echo "=== [$name] starting: $(miner_cmd "$name") ==="
   cd "/opt/$name"
-  sh -c "$(miner_cmd "$name")" 2>&1 | tee "$LOG" &
+  # tee -a so the periodic truncation below actually frees space (with plain
+  # tee the writer keeps its old offset and the file just goes sparse).
+  sh -c "$(miner_cmd "$name")" 2>&1 | tee -a "$LOG" &
   pipeline_pid=$!
   start=$(date +%s)
   confirmed=0
   while :; do
-    sleep 10
-    if ! kill -0 "$pipeline_pid" 2>/dev/null; then
-      echo "=== [$name] exited ==="
-      return 1
-    fi
+    isleep 10
+    alive=1
+    kill -0 "$pipeline_pid" 2>/dev/null || alive=0
+    # Check the log BEFORE judging an exit, so a miner that got shares and
+    # then lost the pool is restarted rather than replaced by the next one.
     if [ "$confirmed" -eq 0 ] && has_accepted; then
       confirmed=1
       echo "=== [$name] ACCEPTED SHARE - this miner works on this node ==="
-      # Stop tailing the log into a growing file; from here the miner just runs.
-      wait "$pipeline_pid"
-      echo "=== [$name] exited after running successfully ==="
-      return 0
+    fi
+    if [ "$alive" -eq 0 ]; then
+      wait "$pipeline_pid" 2>/dev/null
+      if [ "$confirmed" -eq 1 ]; then
+        echo "=== [$name] exited after running successfully ==="
+        return 0
+      fi
+      echo "=== [$name] exited before any accepted share ==="
+      return 1
+    fi
+    if [ "$confirmed" -eq 1 ]; then
+      # Miner output keeps flowing to Salad's log via tee's stdout; the file
+      # copy is only needed for the share check, so keep it from growing
+      # (tens of MB/day otherwise, which fills minimum storage in weeks).
+      : > "$LOG"
+      continue
     fi
     elapsed=$(( $(date +%s) - start ))
-    if [ "$confirmed" -eq 0 ] && [ "$elapsed" -ge "$NO_SHARE_TIMEOUT" ]; then
+    if [ "$elapsed" -ge "$NO_SHARE_TIMEOUT" ]; then
       echo "=== [$name] no accepted share after ${elapsed}s - killing and trying next miner ==="
-      pkill -f "/opt/$name/" 2>/dev/null
+      pkill -TERM -f "/opt/$name/" 2>/dev/null
       sleep 3
-      pkill -9 -f "/opt/$name/" 2>/dev/null
+      pkill -KILL -f "/opt/$name/" 2>/dev/null
+      wait "$pipeline_pid" 2>/dev/null
       return 1
     fi
   done
@@ -217,5 +252,5 @@ while :; do
     fi
   done
   echo "=== restarting in 15s ==="
-  sleep 15
+  isleep 15
 done

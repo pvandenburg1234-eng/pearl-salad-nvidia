@@ -78,7 +78,7 @@ Environment variables:
 | `POOL` | `stratum+ssl://prl.kryptex.network:8048` (default; Kryptex, 1% fee, dashboard at `pool.kryptex.com/prl`). TLS on 8048 because krig-miner refuses plain TCP; the other miners get `--tls` / `stratum+ssl://` from the same URL. If you set the plain port 7048, krig is silently given 8048. Kryptex is the only pool krig-miner will talk to, and 1% pool fee + krig's 0% devfee beats any 0% pool + SRBMiner's 2% devfee. The **region is auto-selected** at startup by TCP latency from the node (`prl prl-us prl-eu prl-br prl-sg prl-hk prl-ru prl-ae`); the log shows the probe results. Set `POOL_AUTO=0` to use `POOL` exactly as given. Alternative: HeroMiners, `stratum+tcp://ca.pearl.herominers.com:1200` (0% fee, PPS+; regions `ca us us2 us3 de es fi fr ru tr hk sg kr au br` are auto-probed the same way; krig is skipped there and SRBMiner takes over). |
 | `WORKER` | optional label; Salad's machine id is used if unset |
 | `MINERS` | order to try, default `krig srb bz wildrig`. Pin one with e.g. `MINERS=srb` |
-| `NO_SHARE_TIMEOUT` | seconds a miner gets to produce an accepted share before the next is tried (default `300`) |
+| `NO_SHARE_TIMEOUT` | seconds a miner gets to produce an accepted share before the next is tried (default `600` — Pearl shares are STARK proofs and the first one can be slow on weak cards) |
 | `KRIG_EXTRA_ARGS` / `SRB_EXTRA_ARGS` / `BZ_EXTRA_ARGS` / `WILDRIG_EXTRA_ARGS` | optional extra flags per miner |
 
 There is no `ALGO` variable: every miner spells pearlhash differently
@@ -103,8 +103,9 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
 | Symptom | Cause / fix |
 |---|---|
 | `nvidia-smi not found` or `nvidia-smi failed` | The driver wasn't injected. Either the group is on an AMD class (use `pearl-salad`), or `NVIDIA_VISIBLE_DEVICES` / `NVIDIA_DRIVER_CAPABILITIES` were overridden in the env vars. Leave them alone. |
-| `CUDA driver version is insufficient for CUDA runtime version` | Node's driver is older than 560. Batch nodes get reallocated, so just wait for the next node; or drop the base image to `nvidia/cuda:12.4.1-runtime-ubuntu22.04` (driver ≥ 550). |
-| `no accepted share after 300s - killing and trying next miner` | That miner can't hash on this node; the entrypoint moves on. Once you see `ACCEPTED SHARE - this miner works`, pin it with `MINERS=<name>` to skip the probing on future reallocations. |
+| Instance fails/reallocates with an **empty** log | The base image's `NVIDIA_REQUIRE_CUDA` gate refused the node's driver before the entrypoint ran. This image clears that variable in the Dockerfile; if you rebased onto a stock `nvidia/cuda` image, add `ENV NVIDIA_REQUIRE_CUDA=` back. |
+| RTX 50-series node, miner reports no CUDA device / kernel load error | Blackwell needs CUDA 12.8+ kernels. The base is 12.8; krig ships its own `sm_120` kernels. If SRBMiner/BzMiner fail here, pin `MINERS=krig`. |
+| `no accepted share after 600s - killing and trying next miner` | That miner can't hash on this node; the entrypoint moves on. Once you see `ACCEPTED SHARE - this miner works`, pin it with `MINERS=<name>` to skip the probing on future reallocations. |
 | WildRig: `no OpenCL platforms` / `CL_...` errors | Expected if NVIDIA OpenCL isn't available under WSL2. That's why it's last. |
 | Shares rejected as stale, pool latency > ~150 ms | Node is far from the pool region. With `POOL_AUTO=1` (default) the entrypoint picks the nearest region of whichever pool is in use; check the `Probing ... regions` lines. |
 | `WARNING: Pearl mainnet addresses start with 'prl1p'` | Wrong wallet. Wrapped Pearl (WPRL, an Ethereum `0x…` address) is not a mining payout address. |
@@ -140,10 +141,11 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v0.2.0 | 2026-09-23 | Base → CUDA 12.8.1 (Salad's RTX 50-series requirement) with the driver-version gate cleared so older 30/40-series nodes start. Entrypoint hardening as pearl-salad v1.1.0 (bounded log, SIGTERM, restart-after-shares, stricter share detector, timeout 600). BzMiner 100.36. Still unverified on NVIDIA. |
 | v0.1.0 | 2026-09-23 | First release. Same entrypoint as pearl-salad v1.0.0; unverified on NVIDIA |
 
 ## Files
 
-- `Dockerfile` — image definition (CUDA 12.6 runtime base + krig-miner, SRBMiner, BzMiner, WildRig)
+- `Dockerfile` — image definition (CUDA 12.8 runtime base + krig-miner, SRBMiner, BzMiner, WildRig)
 - `entrypoint.sh` — readiness check, pool region probe, miner selection by accepted shares
 - `.github/workflows/build.yml` — builds and pushes to GHCR on every push to `main`

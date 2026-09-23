@@ -20,9 +20,10 @@
 #    * Salad nodes are Windows PCs; containers run under WSL2 with the NVIDIA
 #      container toolkit. The host injects the driver (libcuda.so.1,
 #      libnvidia-ml.so.1, nvidia-smi) - the image must NOT ship a driver.
-#    * The image must be a CUDA image. This one is nvidia/cuda 12.6 runtime,
-#      which needs host driver >= 560 (any RTX 50-series node has that; older
-#      nodes are usually on 55x+).
+#    * The image must be a CUDA image. This one is nvidia/cuda 12.8 runtime
+#      (Salad requires CUDA 12.8 for RTX 50-series / Blackwell), with the
+#      base image's driver-version gate (NVIDIA_REQUIRE_CUDA) cleared so
+#      older-driver 30/40-series nodes are not refused at container start.
 #    * NVIDIA_VISIBLE_DEVICES=all and NVIDIA_DRIVER_CAPABILITIES=compute,utility
 #      come from the base image; they are what tells the toolkit to inject
 #      the driver. Don't unset them.
@@ -70,10 +71,21 @@
 # ============================================================================
 
 # CUDA runtime image: ships cudart/nvrtc for miners that load them
-# dynamically, but no driver. ~2 GB, much smaller than the ROCm sibling.
-FROM nvidia/cuda:12.6.3-runtime-ubuntu24.04
+# dynamically, but no driver. 12.8 is the first CUDA with Blackwell (sm_120)
+# support - SaladCloud requires workloads for RTX 50-series to be built with
+# CUDA 12.8 - and it is still smaller than the ROCm sibling.
+FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# The nvidia/cuda base sets NVIDIA_REQUIRE_CUDA=cuda>=12.8, which the NVIDIA
+# container toolkit enforces at container START: a node whose host driver is
+# older than the matching release is refused before the entrypoint even runs,
+# with nothing in the Salad log. The miners bring their own CUDA kernels and
+# only need libcuda from the driver, and CUDA 12.x runtimes work on any 12.x
+# driver (minor-version compatibility), so drop the constraint and let older
+# 30/40-series nodes run too.
+ENV NVIDIA_REQUIRE_CUDA=
 
 # Set by the build workflow to the git tag (v1.2.3) or branch; the entrypoint
 # prints it so the Salad log says which image version a node is running.
@@ -116,7 +128,7 @@ RUN wget -qO /tmp/srb.tgz \
  && ls -la /opt/srb
 
 # --- 3. BzMiner --------------------------------------------------------------
-ARG BZ_VERSION=100.31
+ARG BZ_VERSION=100.36
 RUN wget -qO /tmp/bz.tgz \
       https://github.com/bzminer/bzminer/releases/download/v${BZ_VERSION}/bzminer_v${BZ_VERSION}_linux.tar.gz \
  && mkdir -p /tmp/bz && tar xzf /tmp/bz.tgz -C /tmp/bz \
@@ -140,7 +152,7 @@ ENV POOL=stratum+ssl://prl.kryptex.network:8048 \
     WALLET=REPLACE_WITH_YOUR_WALLET \
     WORKER=salad01 \
     MINERS="krig srb bz wildrig" \
-    NO_SHARE_TIMEOUT=300
+    NO_SHARE_TIMEOUT=600
 
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
