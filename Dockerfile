@@ -52,11 +52,13 @@
 #      WORKER = optional; Salad's machine id is used automatically if unset
 #
 #  ---- POOL options ---------------------------------------------------------
-#    Pearl - HeroMiners, 0% fee (region auto-selected by latency at startup;
-#    regions: ca us us2 us3 de es fi fr ru tr hk sg kr au br; POOL_AUTO=0 to pin):
+#    Pearl - Kryptex, 1% fee, DEFAULT. The only pool krig-miner (0% devfee)
+#    will talk to. Region auto-selected by latency at startup (prl prl-us
+#    prl-eu prl-br prl-sg prl-hk prl-ru prl-ae; POOL_AUTO=0 to pin):
+#      POOL   = stratum+tcp://prl.kryptex.network:7048
+#    Pearl - HeroMiners, 0% fee (alternative; krig is skipped, SRBMiner 2%
+#    devfee takes over; regions ca us us2 us3 de es fi fr ru tr hk sg kr au br):
 #      POOL   = stratum+tcp://ca.pearl.herominers.com:1200
-#    Pearl - Kryptex, 1% fee (alternative; region ports 7048 tcp / 8048 ssl):
-#      POOL   = stratum+tcp://prl-us.kryptex.network:7048
 #
 #  ---- HONEST NOTE ON ECONOMICS ---------------------------------------------
 #    On public SaladCloud rental prices, renting a GPU to mine generally LOSES
@@ -128,7 +130,7 @@ RUN wget -qO /tmp/w.tgz \
  && ls -la /opt/wildrig
 
 # Runtime defaults - override these in the SaladCloud env vars
-ENV POOL=stratum+tcp://ca.pearl.herominers.com:1200 \
+ENV POOL=stratum+tcp://prl.kryptex.network:7048 \
     WALLET=REPLACE_WITH_YOUR_WALLET \
     WORKER=salad01 \
     MINERS="krig srb bz wildrig" \
