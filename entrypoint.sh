@@ -96,8 +96,23 @@ case "$POOL" in
   *) KRIG_OK=0 ;;
 esac
 
-# Pool URL without the stratum+tcp:// scheme, for miners that want host:port.
+# Pool URL without the scheme, for miners that want host:port, and whether
+# the scheme asked for TLS (stratum+ssl:// or stratum+tls://).
 POOL_HOSTPORT="$(echo "$POOL" | sed -E 's#^[a-z+]+://##')"
+case "$POOL" in
+  stratum+ssl://*|stratum+tls://*|ssl://*|tls://*) POOL_TLS=1 ;;
+  *) POOL_TLS=0 ;;
+esac
+# krig-miner ONLY speaks TLS ("plain TCP is not supported"). Kryptex's TLS
+# port is 8048 (plain is 7048), so if POOL is the plain Kryptex port, hand
+# krig the TLS one instead.
+KRIG_HOSTPORT="$POOL_HOSTPORT"
+if [ "$POOL_TLS" = 0 ]; then
+  KRIG_HOSTPORT="$(echo "$POOL_HOSTPORT" | sed -E 's#^(.*kryptex\.network):7048$#\1:8048#')"
+fi
+# SRBMiner takes TLS as a flag rather than a URL scheme.
+SRB_TLS=""
+[ "$POOL_TLS" = 1 ] && SRB_TLS="--tls true"
 
 # Print the miner command for a given name. Every miner spells the algorithm
 # differently, so it is hardcoded per miner rather than taken from an env var:
@@ -108,11 +123,12 @@ POOL_HOSTPORT="$(echo "$POOL" | sed -E 's#^[a-z+]+://##')"
 miner_cmd() {
   case "$1" in
     krig)
-      echo /opt/krig/krig-miner --coin pearl -o "$POOL_HOSTPORT" -u "$USER_ARG" -p x \
+      # krig's own docs use WALLET/WORKER, not WALLET.WORKER
+      echo /opt/krig/krig-miner --coin pearl -o "$KRIG_HOSTPORT" -u "$WALLET/$WORKER_NAME" -p x \
         --no-tui --no-rocm ${KRIG_EXTRA_ARGS:-}
       ;;
     srb)
-      echo /opt/srb/SRBMiner-MULTI --algorithm pearlhash --pool "$POOL_HOSTPORT" \
+      echo /opt/srb/SRBMiner-MULTI --algorithm pearlhash --pool "$POOL_HOSTPORT" $SRB_TLS \
         --wallet "$USER_ARG" --password x --disable-cpu \
         ${SRB_EXTRA_ARGS:-}
       ;;

@@ -54,8 +54,9 @@
 #  ---- POOL options ---------------------------------------------------------
 #    Pearl - Kryptex, 1% fee, DEFAULT. The only pool krig-miner (0% devfee)
 #    will talk to. Region auto-selected by latency at startup (prl prl-us
-#    prl-eu prl-br prl-sg prl-hk prl-ru prl-ae; POOL_AUTO=0 to pin):
-#      POOL   = stratum+tcp://prl.kryptex.network:7048
+#    prl-eu prl-br prl-sg prl-hk prl-ru prl-ae; POOL_AUTO=0 to pin). TLS port
+#    8048 because krig-miner refuses plain TCP (7048 works for the others):
+#      POOL   = stratum+ssl://prl.kryptex.network:8048
 #    Pearl - HeroMiners, 0% fee (alternative; krig is skipped, SRBMiner 2%
 #    devfee takes over; regions ca us us2 us3 de es fi fr ru tr hk sg kr au br):
 #      POOL   = stratum+tcp://ca.pearl.herominers.com:1200
@@ -130,7 +131,7 @@ RUN wget -qO /tmp/w.tgz \
  && ls -la /opt/wildrig
 
 # Runtime defaults - override these in the SaladCloud env vars
-ENV POOL=stratum+tcp://prl.kryptex.network:7048 \
+ENV POOL=stratum+ssl://prl.kryptex.network:8048 \
     WALLET=REPLACE_WITH_YOUR_WALLET \
     WORKER=salad01 \
     MINERS="krig srb bz wildrig" \
