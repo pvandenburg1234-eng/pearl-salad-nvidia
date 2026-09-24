@@ -54,6 +54,10 @@ please update the list above with the card and hashrate.
 | RTX 3080 (same uncapped host, bench) | BzMiner 100.36 | 110.5 TH/s at ~347 W | core 1650 MHz, 0.318 TH/W. 3% behind SRBMiner in the same bench run, the same gap as on the capped hosts. 1 of 4 NVIDIA hosts uncapped so far. | 2026-09-24 |
 | RTX 3080 (same uncapped host, bench) | krig 1.5.2 | 90.8 TH/s at 349 W | core 1560 MHz, 0.260 TH/W, 78 °C. At the same power krig holds 120 MHz less clock than SRBMiner and does 20% less work per watt; its 0% devfee doesn't close a 23% gap. Full-power Ampere order confirmed: srb > bz > krig. | 2026-09-24 |
 
+| RTX 4070 (clean host, bench) | SRBMiner 3.6.9 | 107.6 TH/s at 180 W | core 2385 MHz, 68 °C, fan 32%, 0.60 TH/W. First Ada card: runs at full boost well under its 200 W limit, so owners have little reason to cap it. Middle East host (Kryptex UAE, 21 ms). | 2026-09-24 |
+| RTX 4070 (same host, bench) | BzMiner 100.36 | 107.7 TH/s at 180 W | core 2550 MHz, 71 °C, 3 shares in 3 min. Dead heat with SRBMiner on Ada; the 3% Ampere gap does not carry over. | 2026-09-24 |
+| RTX 4070 (same host, bench) | krig 1.5.2 | 98.0 TH/s at 172 W | core 2550 MHz, 70 °C, 0.57 TH/W. 91% of the leaders on Ada (80% on Ampere); its 0% devfee still doesn't cover the gap. | 2026-09-24 |
+
 The percentage printed just before the clock in krig's and SRBMiner's stats
 lines is **fan speed**, not GPU utilization (SRBMiner's table header labels
 that column Fan).
@@ -62,7 +66,8 @@ Per-class picks so far (see the AMD sibling for RDNA4):
 
 | Salad GPU class | `MINERS=` | Why |
 |---|---|---|
-| RTX 3080 / 3080 Ti | `srb` | 92 vs BzMiner 88.6 vs krig 67 on the same capped 3080, all three run back to back. A full-clock 3080 should scale all three by roughly 1.4x. |
+| RTX 3080 / 3080 Ti | `srb` | 113.8 vs BzMiner 110.5 vs krig 90.8 on an uncapped 3080, all three in one bench run; same order on two capped hosts. |
+| RTX 4070 (and likely other Ada) | `srb` | 107.6 vs BzMiner 107.7 (tie) vs krig 98.0 on one clean host. Either of the first two is fine. |
 | others | run the bench | |
 
 That 3080 Ti node was a bad sample: a 3080 Ti at full clocks benchmarks around
