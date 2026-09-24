@@ -16,18 +16,39 @@ accepted share on the node it lands on:
 1. [krig-miner](https://github.com/kryptex/krig-miner) — Kryptex's miner,
    CUDA backend, 0% devfee. **Only works with Kryptex's own pool**; it refuses
    every other pool, so the entrypoint skips it unless `POOL` is a
-   `kryptex.network` address. **Unverified on Salad as of 2026-09-23.**
+   `kryptex.network` address. **Verified on a Salad RTX 3080 Ti 2026-09-24**
+   (16.2 TH/s on a host power-capped to 176 W; see the table below).
 2. [SRBMiner-MULTI](https://github.com/doktor83/SRBMiner-Multi) — pearlhash on
-   NVIDIA (2% devfee). Big NVIDIA efficiency gains in 3.6.9. **Unverified.**
+   NVIDIA (2% devfee). Big NVIDIA efficiency gains in 3.6.9. **Verified on a
+   Salad RTX 3080 Ti 2026-09-24**: 22.0 TH/s and the first accepted share on
+   the same power-capped host. Uses CUDA directly; its OpenCL probe logs
+   `CL_UNKNOWN_ERROR`, which is harmless.
 3. [BzMiner](https://github.com/bzminer/bzminer) — pearl on NVIDIA (2% devfee).
-   **Unverified.**
+   **Verified on a Salad RTX 3080 Ti 2026-09-24**: 20.8 TH/s on the same
+   power-capped host, `ampere-sm86-direct` profile. Its device table is the
+   only place any miner shows the card's clocks and power under Salad.
 4. [WildRig-Multi](https://github.com/andru-kun/wildrig-multi) — pearlhash,
    0% devfee, but it may go through OpenCL, which NVIDIA does not fully support
    under WSL2 (which is what Salad nodes run). That's why it's last.
-   **Unverified.**
+   **Confirmed not working on Salad NVIDIA 2026-09-24**: no OpenCL platform
+   is injected, so it sits at `n/a TH/s`. Kept only as a last resort.
 
 Once you see `ACCEPTED SHARE - this miner works on this node` in the logs,
 please update the list above with the card and hashrate.
+
+| Card (Salad class) | Miner | Rate | Notes | Date |
+|---|---|---|---|---|
+| RTX 3080 Ti | SRBMiner 3.6.9 | 22.0 TH/s, 1 share in 5 min | host power-capped: 176 W, core 915–990 MHz (card reports 1755 MHz nominal), 64% busy, Ryzen 5 2600 host | 2026-09-24 |
+| RTX 3080 Ti | BzMiner 100.36 | 20.8 TH/s, 0 shares | same host | 2026-09-24 |
+| RTX 3080 Ti | krig 1.5.2 | 16.2 TH/s, 0 shares | same host; `pattern=H100 (shape rtx-3080)` | 2026-09-24 |
+| RTX 3080 Ti | WildRig 0.51.2 | none | no OpenCL under WSL2 | 2026-09-24 |
+
+That 3080 Ti node was a bad sample: a 3080 Ti at full clocks benchmarks around
+116 TH/s. All three CUDA miners agreed on ~20, and the telemetry (only visible
+in krig's and BzMiner's stats lines on NVIDIA) shows why: the host had the
+card power-limited to half its TDP. Bench a class on two or three nodes before
+concluding anything about it. Salad NVIDIA hosts show their clocks and watts;
+AMD hosts don't.
 
 **Read the economics note in `Dockerfile` first.** Renting GPUs to mine is usually
 a net loss, and Pearl's difficulty has climbed steeply since its April 2026
@@ -190,6 +211,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.0.0 | 2026-09-24 | Same code as v0.3.2, promoted: first verified run on a Salad NVIDIA node (RTX 3080 Ti, driver 616.56, CUDA 12.8 base, driver gate cleared). krig, SRBMiner and BzMiner all hash and SRBMiner's share was accepted; WildRig confirmed dead without OpenCL. |
 | v0.3.2 | 2026-09-24 | BzMiner prints its device table every 5 min instead of every 30 s (Salad's group log view caps at 1000 rows); `--no-color`. |
 | v0.3.1 | 2026-09-24 | Bench parser: BzMiner summary rows carry `pool hr | miner hr` once shares arrive; take the miner column, not the pool estimate. |
 | v0.3.0 | 2026-09-24 | Benchmark image `pearl-salad-nvidia-bench` (same Dockerfile, `bench` stage) and shared `common.sh`. Share detector now understands BzMiner's `shares=N` counter. `NVIDIA_DISABLE_REQUIRE=true` alongside the empty `NVIDIA_REQUIRE_CUDA`. Diagnostics when a miner is dropped. Still unverified on an NVIDIA node. |
