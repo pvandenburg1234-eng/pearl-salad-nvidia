@@ -86,6 +86,11 @@ ENV DEBIAN_FRONTEND=noninteractive
 # driver (minor-version compatibility), so drop the constraint and let older
 # 30/40-series nodes run too.
 ENV NVIDIA_REQUIRE_CUDA=
+# Belt and braces: the empty string works because libnvidia-container's
+# expression evaluator treats an empty predicate as satisfied, but
+# NVIDIA_DISABLE_REQUIRE is the documented switch and short-circuits before
+# any NVIDIA_REQUIRE_* value is even read.
+ENV NVIDIA_DISABLE_REQUIRE=true
 
 # Set by the build workflow to the git tag (v1.2.3) or branch; the entrypoint
 # prints it so the Salad log says which image version a node is running.

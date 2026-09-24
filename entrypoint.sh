@@ -221,19 +221,24 @@ run_miner() {
         echo "=== [$name] exited after running successfully ==="
         return 0
       fi
-      echo "=== [$name] exited before any accepted share ==="
+      echo "=== [$name] exited before any accepted share - its last lines were: ==="
+      tail -n 8 "$LOG" 2>/dev/null | sed 's/^/    | /'
       return 1
     fi
     if [ "$confirmed" -eq 1 ]; then
       # Miner output keeps flowing to Salad's log via tee's stdout; the file
       # copy is only needed for the share check, so keep it from growing
-      # (tens of MB/day otherwise, which fills minimum storage in weeks).
+      # (a few MB/day otherwise, for nothing).
       : > "$LOG"
       continue
     fi
     elapsed=$(( $(date +%s) - start ))
     if [ "$elapsed" -ge "$NO_SHARE_TIMEOUT" ]; then
       echo "=== [$name] no accepted share after ${elapsed}s - killing and trying next miner ==="
+      # If the miner WAS getting shares but words it in a way has_accepted
+      # doesn't know, these lines are what you need to fix the detector.
+      echo "=== [$name] its lines mentioning share/accept (detector input): ==="
+      grep -iE 'accept|share' "$LOG" 2>/dev/null | tail -n 8 | sed 's/^/    | /'
       pkill -TERM -f "/opt/$name/" 2>/dev/null
       sleep 3
       pkill -KILL -f "/opt/$name/" 2>/dev/null
