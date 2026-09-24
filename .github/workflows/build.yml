@@ -1,13 +1,16 @@
-# Builds the miner image on GitHub's servers and pushes it to GHCR, so you
+# Builds the miner images on GitHub's servers and pushes them to GHCR, so you
 # don't need Docker installed locally.
 #
-# After the first successful run, make the package PUBLIC so SaladCloud can
-# pull it:  github.com/<you>?tab=packages -> pearl-salad-nvidia -> Package settings
+# After the first successful run, make each package PUBLIC so SaladCloud can
+# pull it:  github.com/<you>?tab=packages -> <package> -> Package settings
 #           -> Change visibility -> Public
 #
-# Image name: ghcr.io/<you>/pearl-salad-nvidia
+# Two images from one Dockerfile (multi-stage):
+#   ghcr.io/<you>/pearl-salad-nvidia        target "miner"  - production entrypoint
+#   ghcr.io/<you>/pearl-salad-nvidia-bench  target "bench"  - runs every miner for
+#                                           a window and prints a hashrate table
 #
-# Tags produced:
+# Tags produced (for both):
 #   push to main        -> :latest, :sha-<short sha>
 #   git tag vX.Y.Z      -> :vX.Y.Z, :vX.Y, :sha-<short sha>   (latest untouched)
 # Deploy Salad groups on a :vX.Y.Z tag so a reallocation can't silently pick
@@ -28,6 +31,14 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: miner
+            image: pearl-salad-nvidia
+          - target: bench
+            image: pearl-salad-nvidia-bench
     steps:
       - uses: actions/checkout@v4
 
@@ -42,7 +53,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/pearl-salad-nvidia
+          images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
@@ -52,10 +63,11 @@ jobs:
       - uses: docker/build-push-action@v6
         with:
           context: .
+          target: ${{ matrix.target }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             IMAGE_VERSION=${{ steps.meta.outputs.version }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image }}

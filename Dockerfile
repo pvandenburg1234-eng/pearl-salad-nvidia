@@ -74,7 +74,7 @@
 # dynamically, but no driver. 12.8 is the first CUDA with Blackwell (sm_120)
 # support - SaladCloud requires workloads for RTX 50-series to be built with
 # CUDA 12.8 - and it is still smaller than the ROCm sibling.
-FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04
+FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -159,6 +159,18 @@ ENV POOL=stratum+ssl://prl.kryptex.network:8048 \
     MINERS="krig srb bz wildrig" \
     NO_SHARE_TIMEOUT=600
 
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+# Tells common.sh which GPU readiness check and miner flags to use.
+ENV MINER_VENDOR=nvidia
+
+COPY common.sh entrypoint.sh bench.sh /
+RUN chmod +x /entrypoint.sh /bench.sh
+
+# --- bench image: same miners, different entrypoint ---------------------------
+# Published as ghcr.io/<you>/pearl-salad-nvidia-bench. Runs every miner for a
+# fixed window and prints a hashrate table + MINERS= recommendation (bench.sh).
+FROM base AS bench
+ENTRYPOINT ["/bench.sh"]
+
+# --- production image (last stage = default for a plain `docker build`) -------
+FROM base AS miner
 ENTRYPOINT ["/entrypoint.sh"]

@@ -120,6 +120,52 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
 - **Overclocking / power limits.** krig-miner has `--gpu-plimit` and friends,
   but they need NVML write access, which Salad containers don't have.
 
+## Benchmarking the miners (`pearl-salad-nvidia-bench`)
+
+The production image picks the first miner that gets a share, which is a
+compatibility test, not a speed test. Miners don't change often, so instead of
+benchmarking on every start there is a separate image, built from the same
+Dockerfile with the same miner binaries, that you run when you want to know
+which miner is fastest on a GPU class (for example after a miner ships a big
+update):
+
+```
+ghcr.io/<you>/pearl-salad-nvidia-bench:<same tag as production>
+```
+
+Deploy it exactly like the production image (one replica, one GPU class, same
+`WALLET`). It mines with each miner in turn for `BENCH_SECONDS` (default 300),
+parses the hashrate the miner reports, applies that miner's devfee, and prints:
+
+```
+ MINER    STATUS   REPORTED TH/s  SAMPLES  SHARES  DEVFEE EFFECTIVE TH/s
+ krig     ok             231.50        9       4      0%         231.50
+ srb      ok             240.20       12       4      2%         235.40
+ bz       ok             225.00       12       3      2%         220.50
+ wildrig  failed              0        0       0      0%           0.00
+ RECOMMENDED for this GPU class:  MINERS=srb
+```
+
+(illustrative numbers). Then it keeps mining with the winner until you stop
+the group, so the paid node time isn't wasted. Set `MINERS=<winner>` on the
+production group for that GPU class. A Salad GPU class pins the card model, so
+one run per class is enough until a miner update changes the picture.
+
+Miners within 3% of the top are treated as a tie and the lower devfee wins:
+reported rates are only accurate to a few percent, and the pool's 24-hour
+worker figure is what actually pays.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `BENCH_SECONDS` | `300` | mining window per miner |
+| `BENCH_SKIP_SAMPLES` | `2` | warm-up hashrate reports ignored before taking the median |
+| `MINERS` | all four | which miners to test, in order |
+| `BENCH_THEN` | `mine` | `mine` with the winner, `hold` (idle `BENCH_HOLD` s, then exit) or `exit` (Salad restarts the container, so stop the group once you've read the table) |
+
+The hashrate parser has only been verified against krig's output; the others
+follow their documented formats. If a miner shows `failed` with hashrate lines
+visible in the log, paste those lines and the parser needs a rule for them.
+
 ## Releases
 
 Images are versioned with git tags. The workflow builds every push to `main`
@@ -146,6 +192,8 @@ first verified build.
 
 ## Files
 
-- `Dockerfile` — image definition (CUDA 12.8 runtime base + krig-miner, SRBMiner, BzMiner, WildRig)
-- `entrypoint.sh` — readiness check, pool region probe, miner selection by accepted shares
+- `Dockerfile` — image definition (CUDA 12.8 runtime base + krig-miner, SRBMiner, BzMiner, WildRig); two stages, `miner` (production) and `bench`
+- `common.sh` — shared by both entrypoints: GPU check, pool region probe, miner commands, share detector, hashrate parser
+- `entrypoint.sh` — production: miner selection by accepted shares
+- `bench.sh` — benchmark image: hashrate table + `MINERS=` recommendation
 - `.github/workflows/build.yml` — builds and pushes to GHCR on every push to `main`
