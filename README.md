@@ -42,6 +42,16 @@ please update the list above with the card and hashrate.
 | RTX 3080 Ti | BzMiner 100.36 | 20.8 TH/s, 0 shares | same host | 2026-09-24 |
 | RTX 3080 Ti | krig 1.5.2 | 16.2 TH/s, 0 shares | same host; `pattern=H100 (shape rtx-3080)` | 2026-09-24 |
 | RTX 3080 Ti | WildRig 0.51.2 | none | no OpenCL under WSL2 | 2026-09-24 |
+| RTX 3080 | krig 1.5.2 | 67 TH/s, 0.295 TH/W | production node; host capped at 228 W (~71% of 320 W), core 1155–1200 MHz, GPU only 56% busy | 2026-09-24 |
+| RTX 3080 | SRBMiner 3.6.9 | **92 TH/s**, 0.404 TH/W | same node and cap; core 1380 MHz. 37% faster than krig on Ampere. | 2026-09-24 |
+| RTX 3080 | BzMiner 100.36 | 88.6 TH/s, 0.390 TH/W | same node and cap; core 1350 MHz, 3 shares. 3.6% behind SRBMiner at the same devfee. | 2026-09-24 |
+
+Per-class picks so far (see the AMD sibling for RDNA4):
+
+| Salad GPU class | `MINERS=` | Why |
+|---|---|---|
+| RTX 3080 / 3080 Ti | `srb` | 92 vs BzMiner 88.6 vs krig 67 on the same capped 3080, all three run back to back. A full-clock 3080 should scale all three by roughly 1.4x. |
+| others | run the bench | |
 
 That 3080 Ti node was a bad sample: a 3080 Ti at full clocks benchmarks around
 116 TH/s. All three CUDA miners agreed on ~20, and the telemetry (only visible
