@@ -190,6 +190,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v0.3.1 | 2026-09-24 | Bench parser: BzMiner summary rows carry `pool hr | miner hr` once shares arrive; take the miner column, not the pool estimate. |
 | v0.3.0 | 2026-09-24 | Benchmark image `pearl-salad-nvidia-bench` (same Dockerfile, `bench` stage) and shared `common.sh`. Share detector now understands BzMiner's `shares=N` counter. `NVIDIA_DISABLE_REQUIRE=true` alongside the empty `NVIDIA_REQUIRE_CUDA`. Diagnostics when a miner is dropped. Still unverified on an NVIDIA node. |
 | v0.2.0 | 2026-09-23 | Base → CUDA 12.8.1 (Salad's RTX 50-series requirement) with the driver-version gate cleared so older 30/40-series nodes start. Entrypoint hardening as pearl-salad v1.1.0 (bounded log, SIGTERM, restart-after-shares, stricter share detector, timeout 600). BzMiner 100.36. Still unverified on NVIDIA. |
 | v0.1.0 | 2026-09-23 | First release. Same entrypoint as pearl-salad v1.0.0; unverified on NVIDIA |

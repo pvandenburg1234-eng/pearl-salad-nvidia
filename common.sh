@@ -325,8 +325,19 @@ parse_hashrate() {
       if (l !~ /h\/s|[0-9][kmgtp]h([^a-z]|$)/) next
       if (l ~ /network|difficulty|pool hashrate|pool speed/) next
       v = ""; u = ""
-      if (match(l, /[0-9]+(\.[0-9]+)? *[kmgtp]?h\/s/) || match(l, /[0-9]+(\.[0-9]+)?[kmgtp]h([^a-z]|$)/)) {
-        s = substr(l, RSTART, RLENGTH)
+      # The BzMiner summary row has "| pool hr | miner hr |" - two rates, and
+      # the pool-side estimate comes first ("148.54th | 126.66th"). We want
+      # the figure the miner measured itself, so on those rows take the LAST
+      # rate found. (No apostrophes in here: this is inside a single-quoted
+      # shell string.)
+      rest = l; last = ""
+      while (match(rest, /[0-9]+(\.[0-9]+)? *[kmgtp]?h\/s/) || match(rest, /[0-9]+(\.[0-9]+)?[kmgtp]h([^a-z]|$)/)) {
+        last = substr(rest, RSTART, RLENGTH)
+        if (l !~ /smry|miner hr/) break
+        rest = substr(rest, RSTART + RLENGTH)
+      }
+      if (last != "") {
+        s = last
         match(s, /[0-9]+(\.[0-9]+)?/); v = substr(s, RSTART, RLENGTH)
         u = substr(s, RSTART + RLENGTH); gsub(/^ +/, "", u)
       } else if (l ~ /speed/) {
@@ -340,7 +351,7 @@ parse_hashrate() {
       if (v == "") next
       ths = v * mult(u)
       if (ths <= 0) next
-      if (l ~ /total|smry/) tot[++nt] = ths; else all[++na] = ths
+      if (l ~ /total|smry|pearl hashrate/) tot[++nt] = ths; else all[++na] = ths
     }
     END {
       if (nt > 0) { n = nt; for (i = 1; i <= n; i++) a[i] = tot[i] }
