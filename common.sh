@@ -254,11 +254,14 @@ miner_skip_reason() {
 # Rules: "N accepted" needs N>0, "Accepted: N" needs N>0, and anything else
 # must be share wording - never bare "accept" (that matched "accepting jobs"
 # / "accepted connection" and could lock MINERS onto a miner that isn't hashing).
+#   BzMiner  "pearl hashrate 34.12th  shares=0"       -> must not count (seen on Salad)
+#   BzMiner  "... shares=3"                            -> counts
 has_accepted() {
-  grep -iE 'accept' "$1" 2>/dev/null \
+  grep -iE 'accept|shares=' "$1" 2>/dev/null \
     | grep -viE 'no accepted|not accepted|accepting|accepted connection' \
     | awk '
-      { l = tolower($0) }
+      { l = tolower($0); gsub(/\033\[[0-9;]*[a-z]/, "", l) }
+      l ~ /shares=[0-9]+/      { if (l ~ /shares=[1-9]/) found = 1; next }
       l ~ /[0-9]+ accepted/    { if (l ~ /(^|[^0-9.])[1-9][0-9]* accepted/) found = 1; next }
       l ~ /accepted:? *[-0-9]/ { if (l ~ /accepted:? *[1-9]/) found = 1; next }
       l ~ /shares? accepted|accepted shares?|accepted \(|accepted \[|accepted!/ { found = 1 }
@@ -269,10 +272,13 @@ has_accepted() {
 # running counter seen ("N accepted" / "Accepted: N"), or the number of
 # per-share lines, whichever is larger.
 count_accepted() {
-  grep -iE 'accept' "$1" 2>/dev/null \
+  grep -iE 'accept|shares=' "$1" 2>/dev/null \
     | grep -viE 'no accepted|not accepted|accepting|accepted connection' \
     | awk '
-      { l = tolower($0) }
+      { l = tolower($0); gsub(/\033\[[0-9;]*[a-z]/, "", l) }
+      l ~ /shares=[0-9]+/ {
+        match(l, /shares=[0-9]+/); s = substr(l, RSTART + 7, RLENGTH - 7) + 0
+        if (s > maxc) maxc = s; next }
       l ~ /[0-9]+ accepted/ {
         match(l, /[0-9]+ accepted/); n = substr(l, RSTART, RLENGTH) + 0
         if (n > maxc) maxc = n; next }
@@ -284,14 +290,22 @@ count_accepted() {
 }
 
 # Reported hashrate in TH/s: prints "<median> <samples>". Each miner prints
-# its rate differently, so this is deliberately loose:
-#   * only lines containing "H/s"; lines about the network/pool rate are skipped
-#   * "<number> <unit>H/s" anywhere on the line is a sample
-#   * WildRig's "speed 10s/60s/15m 51.0 50.9 n/a TH/s" has the number well
-#     before the unit: first numeric token after "speed" is the sample
-#   * if any line says "total", only "total" lines are used (krig prints a
-#     per-GPU line AND a Total line every 30 s; on a one-GPU Salad node they
-#     are the same number, but don't double count)
+# its rate differently, so this is deliberately loose. Formats seen on Salad:
+#   krig     "Total: 51.87 TH/s shares: 0 accepted ..."   and a per-GPU line
+#   SRBMiner "#0  Radeon RX 9060 XT   42.27 TH/s ..."     plus "1 hr 0.00 H/s"
+#            averages that are zero until the window fills
+#   BzMiner  "| smry | ... | 34.07th | ..."  and  "pearl hashrate 34.12th"
+#            (unit "th" with no "/s"; "pool hr | --" columns have no number)
+#   WildRig  "n/a TH/s" when it can't hash; documented "speed 10s/60s/15m
+#            51.0 50.9 n/a TH/s" has the number well before the unit
+# Rules:
+#   * ANSI colour codes are stripped first (SRBMiner and WildRig use them)
+#   * lines about the network/pool rate are skipped
+#   * "<number> <unit>H/s" or "<number><k|m|g|t|p>h" anywhere is a sample;
+#     on a "speed" line without one, the first numeric token after "speed"
+#   * zero samples are dropped (SRBMiner's unfilled averages)
+#   * if any line says "total" or "smry", only those lines are used (krig and
+#     BzMiner print a per-GPU line AND a summary line; don't double count)
 #   * the first SKIP samples are dropped as warm-up, then the median is taken
 # Usage: parse_hashrate FILE [SKIP]
 parse_hashrate() {
@@ -307,10 +321,11 @@ parse_hashrate() {
     }
     {
       l = tolower($0)
-      if (l !~ /h\/s/) next
+      gsub(/\033\[[0-9;]*[a-z]/, "", l)
+      if (l !~ /h\/s|[0-9][kmgtp]h([^a-z]|$)/) next
       if (l ~ /network|difficulty|pool hashrate|pool speed/) next
       v = ""; u = ""
-      if (match(l, /[0-9]+(\.[0-9]+)? *[kmgtp]?h\/s/)) {
+      if (match(l, /[0-9]+(\.[0-9]+)? *[kmgtp]?h\/s/) || match(l, /[0-9]+(\.[0-9]+)?[kmgtp]h([^a-z]|$)/)) {
         s = substr(l, RSTART, RLENGTH)
         match(s, /[0-9]+(\.[0-9]+)?/); v = substr(s, RSTART, RLENGTH)
         u = substr(s, RSTART + RLENGTH); gsub(/^ +/, "", u)
@@ -324,7 +339,8 @@ parse_hashrate() {
       }
       if (v == "") next
       ths = v * mult(u)
-      if (l ~ /total/) tot[++nt] = ths; else all[++na] = ths
+      if (ths <= 0) next
+      if (l ~ /total|smry/) tot[++nt] = ths; else all[++na] = ths
     }
     END {
       if (nt > 0) { n = nt; for (i = 1; i <= n; i++) a[i] = tot[i] }

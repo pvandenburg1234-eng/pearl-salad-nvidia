@@ -162,9 +162,12 @@ worker figure is what actually pays.
 | `MINERS` | all four | which miners to test, in order |
 | `BENCH_THEN` | `mine` | `mine` with the winner, `hold` (idle `BENCH_HOLD` s, then exit) or `exit` (Salad restarts the container, so stop the group once you've read the table) |
 
-The hashrate parser has only been verified against krig's output; the others
-follow their documented formats. If a miner shows `failed` with hashrate lines
-visible in the log, paste those lines and the parser needs a rule for them.
+The hashrate parser and share counter are verified against the real output of
+all four miners from the AMD sibling's Salad runs (krig `Total:` lines,
+SRBMiner's colour-coded stats table, BzMiner's `34.07th` unit and `shares=N`
+counter, WildRig's `n/a TH/s`). The NVIDIA builds of the same miners are
+expected to log the same way. If one shows `failed` with hashrate lines visible
+in the log, paste those lines and the parser needs a rule.
 
 ## Releases
 
