@@ -40,11 +40,11 @@ please update the list above with the card and hashrate.
 
 | Card (Salad class) | Miner | Rate | Notes | Date |
 |---|---|---|---|---|
-| RTX 3080 Ti | SRBMiner 3.6.9 | 22.0 TH/s, 1 share in 5 min | host power-capped: 176 W, core 915–990 MHz (card reports 1755 MHz nominal), 64% busy, Ryzen 5 2600 host | 2026-09-24 |
+| RTX 3080 Ti | SRBMiner 3.6.9 | 22.0 TH/s, 1 share in 5 min | host power-capped: 176 W, core 915–990 MHz (card reports 1755 MHz nominal), fan 64%, Ryzen 5 2600 host | 2026-09-24 |
 | RTX 3080 Ti | BzMiner 100.36 | 20.8 TH/s, 0 shares | same host | 2026-09-24 |
 | RTX 3080 Ti | krig 1.5.2 | 16.2 TH/s, 0 shares | same host; `pattern=H100 (shape rtx-3080)` | 2026-09-24 |
 | RTX 3080 Ti | WildRig 0.51.2 | none | no OpenCL under WSL2 | 2026-09-24 |
-| RTX 3080 | krig 1.5.2 | 67 TH/s, 0.295 TH/W | production node; host capped at 228 W (~71% of 320 W), core 1155–1200 MHz, GPU only 56% busy | 2026-09-24 |
+| RTX 3080 | krig 1.5.2 | 67 TH/s, 0.295 TH/W | production node; host capped at 228 W (~71% of 320 W), core 1155–1200 MHz, fan 56% | 2026-09-24 |
 | RTX 3080 | SRBMiner 3.6.9 | **92 TH/s**, 0.404 TH/W | same node and cap; core 1380 MHz. 37% faster than krig on Ampere. | 2026-09-24 |
 | RTX 3080 | BzMiner 100.36 | 88.6 TH/s, 0.390 TH/W | same node and cap; core 1350 MHz, 3 shares. 3.6% behind SRBMiner at the same devfee. | 2026-09-24 |
 | RTX 3080 Ti (2nd host) | krig 1.5.2 | 88.6 falling to 73 TH/s | slim v1.2.0 bench. Host has a ~70 °C temperature target: the power limit stepped 350 → 308 → 242 → 220 W in the first two minutes under load. Passed the cold startup check; this is what the periodic check (v1.3.0) is for. | 2026-09-24 |
@@ -52,6 +52,11 @@ please update the list above with the card and hashrate.
 | RTX 3080 Ti (2nd host) | BzMiner 100.36 | 75.5 TH/s at 223 W | same host; core 930 MHz. Same ordering as the 3080: SRBMiner > BzMiner > krig on Ampere. | 2026-09-24 |
 | RTX 3080 (uncapped host) | SRBMiner 3.6.9 | **113.8 TH/s** at 349.5 W | first full-power Ampere host: core 1680 MHz, 77 °C, fan 58%. Above the ~105 public figure. At $0.06/h Lowest that is ~2.5x return, ahead of the 9070 XT; at $0.087/h Low it is ~1.7x. | 2026-09-24 |
 | RTX 3080 (same uncapped host, bench) | BzMiner 100.36 | 110.5 TH/s at ~347 W | core 1650 MHz, 0.318 TH/W. 3% behind SRBMiner in the same bench run, the same gap as on the capped hosts. 1 of 4 NVIDIA hosts uncapped so far. | 2026-09-24 |
+| RTX 3080 (same uncapped host, bench) | krig 1.5.2 | 90.8 TH/s at 349 W | core 1560 MHz, 0.260 TH/W, 78 °C. At the same power krig holds 120 MHz less clock than SRBMiner and does 20% less work per watt; its 0% devfee doesn't close a 23% gap. Full-power Ampere order confirmed: srb > bz > krig. | 2026-09-24 |
+
+The percentage printed just before the clock in krig's and SRBMiner's stats
+lines is **fan speed**, not GPU utilization (SRBMiner's table header labels
+that column Fan).
 
 Per-class picks so far (see the AMD sibling for RDNA4):
 
