@@ -7,14 +7,15 @@
 #  hashrates read in TH/s and shares are heavy. NVIDIA is where pearlhash
 #  runs best (RTX 4090 ~230-290 TH/s, RTX 5090 ~320 TH/s).
 #
-#  Ships FOUR miners and lets the entrypoint pick the first one that actually
-#  produces accepted shares on the node it lands on:
-#    1. krig-miner     (Kryptex; CUDA backend, 0% devfee)
-#    2. SRBMiner-MULTI (pearlhash on NVIDIA, 2% devfee)
-#    3. BzMiner        (pearl on NVIDIA, 2% devfee)
-#    4. WildRig-Multi  (pearlhash, 0% devfee; NVIDIA path may go through
-#                       OpenCL, which NVIDIA does not fully support under
-#                       WSL - so it is last)
+#  Ships THREE miners and lets the entrypoint pick the first one that actually
+#  produces accepted shares on the node it lands on (default order from the
+#  Salad results on two Ampere hosts, SRBMiner > BzMiner > krig):
+#    1. SRBMiner-MULTI (pearlhash on NVIDIA, 2% devfee)
+#    2. BzMiner        (pearl on NVIDIA, 2% devfee)
+#    3. krig-miner     (Kryptex; CUDA backend, 0% devfee)
+#  WildRig is NOT included: it is OpenCL-only, and NVIDIA's WSL driver ships no
+#  OpenCL (clinfo lists zero platforms on Salad nodes; NVIDIA's CUDA-on-WSL
+#  guide lists OpenCL as not supported). Three Salad hosts, zero hashes.
 #
 #  How NVIDIA GPUs work on SaladCloud:
 #    * Salad nodes are Windows PCs; containers run under WSL2 with the NVIDIA
@@ -51,7 +52,7 @@
 #    Environment Variables:
 #      WALLET = <your Pearl address, prl1p...>   (REQUIRED)
 #      POOL   = <pool host:port>                 (see options below)
-#      MINERS = optional; default "krig srb bz wildrig"
+#      MINERS = optional; default "srb bz krig"
 #      WORKER = optional; Salad's machine id is used automatically if unset
 #
 #  ---- POOL options ---------------------------------------------------------
@@ -104,9 +105,10 @@ ENV NVIDIA_DISABLE_REQUIRE=true
 ARG IMAGE_VERSION=dev
 ENV IMAGE_VERSION=${IMAGE_VERSION}
 
-# OpenCL ICD loader + NVIDIA ICD file, for WildRig. The container toolkit
-# mounts libnvidia-opencl.so.1 from the host when NVIDIA_DRIVER_CAPABILITIES
-# includes "compute"; the ICD file just tells the loader where to look.
+# OpenCL ICD loader + clinfo, kept only as a diagnostic: gpu_check prints the
+# platform list, and on Salad's NVIDIA nodes it is empty (NVIDIA ships no
+# OpenCL for WSL). The ICD file would point at libnvidia-opencl.so.1 if a
+# host ever did provide it. Nothing in the image mines through OpenCL.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates wget curl ocl-icd-libopencl1 clinfo procps \
     && rm -rf /var/lib/apt/lists/* \
@@ -149,21 +151,16 @@ RUN wget -qO /tmp/bz.tgz \
  && chmod +x /opt/bz/bzminer && rm -rf /tmp/bz /tmp/bz.tgz \
  && ls -la /opt/bz
 
-# --- 4. WildRig-Multi (last resort) ----------------------------------------
-ARG WILDRIG_VERSION=0.51.2
-RUN wget -qO /tmp/w.tgz \
-      https://github.com/andru-kun/wildrig-multi/releases/download/${WILDRIG_VERSION}/wildrig-multi-linux-${WILDRIG_VERSION}.tar.gz \
- && mkdir -p /tmp/w && tar xzf /tmp/w.tgz -C /tmp/w \
- && bin="$(find /tmp/w -type f -name wildrig-multi | head -1)" \
- && [ -n "$bin" ] && mv "$(dirname "$bin")" /opt/wildrig \
- && chmod +x /opt/wildrig/wildrig-multi && rm -rf /tmp/w /tmp/w.tgz \
- && ls -la /opt/wildrig
+# (No WildRig stage: OpenCL-only, and there is no OpenCL on Salad's NVIDIA
+# nodes. The entrypoint reports "not installed" if MINERS names it.)
 
-# Runtime defaults - override these in the SaladCloud env vars
+# Runtime defaults - override these in the SaladCloud env vars.
+# MINERS order is the measured Ampere ranking; the entrypoint still falls
+# through to the next miner if the first can't get a share on a node.
 ENV POOL=stratum+ssl://prl.kryptex.network:8048 \
     WALLET=REPLACE_WITH_YOUR_WALLET \
     WORKER=salad01 \
-    MINERS="krig srb bz wildrig" \
+    MINERS="srb bz krig" \
     NO_SHARE_TIMEOUT=600
 
 # Tells common.sh which GPU readiness check and miner flags to use.

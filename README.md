@@ -10,8 +10,9 @@ NVIDIA is where pearlhash runs best. Public benchmarks (TH/s): RTX 5090 ~320,
 RTX 4090 ~230–290, RTX 5080 ~183, RTX 5070 Ti ~137, RTX 3080 ~105. For
 comparison the best AMD card, the RX 9070 XT, does ~71.
 
-It bundles four miners and auto-selects the first one that produces an
-accepted share on the node it lands on:
+It bundles three miners and auto-selects the first one that produces an
+accepted share on the node it lands on. The default order is `srb bz krig`,
+the measured ranking on two Salad Ampere hosts (see the table below):
 
 1. [krig-miner](https://github.com/kryptex/krig-miner) — Kryptex's miner,
    CUDA backend, 0% devfee. **Only works with Kryptex's own pool**; it refuses
@@ -27,11 +28,12 @@ accepted share on the node it lands on:
    **Verified on a Salad RTX 3080 Ti 2026-09-24**: 20.8 TH/s on the same
    power-capped host, `ampere-sm86-direct` profile. Its device table is the
    only place any miner shows the card's clocks and power under Salad.
-4. [WildRig-Multi](https://github.com/andru-kun/wildrig-multi) — pearlhash,
-   0% devfee, but it may go through OpenCL, which NVIDIA does not fully support
-   under WSL2 (which is what Salad nodes run). That's why it's last.
-   **Confirmed not working on Salad NVIDIA 2026-09-24**: no OpenCL platform
-   is injected, so it sits at `n/a TH/s`. Kept only as a last resort.
+WildRig-Multi is **not included** in this image (it is in the AMD sibling).
+It is OpenCL-only, with no CUDA path, and NVIDIA's WSL driver ships no OpenCL:
+`clinfo` lists zero platforms on Salad NVIDIA nodes, SRBMiner and BzMiner both
+log the missing platform before falling back to CUDA, and NVIDIA's CUDA-on-WSL
+guide lists OpenCL as not supported. Three Salad hosts, zero hashes, idle
+power draw. Removed in v1.4.0.
 
 Once you see `ACCEPTED SHARE - this miner works on this node` in the logs,
 please update the list above with the card and hashrate.
@@ -111,7 +113,7 @@ Environment variables:
 | `WALLET` | your Pearl address (`prl1p…`) — **required** |
 | `POOL` | `stratum+ssl://prl.kryptex.network:8048` (default; Kryptex, 1% fee, dashboard at `pool.kryptex.com/prl`). TLS on 8048 because krig-miner refuses plain TCP; the other miners get `--tls` / `stratum+ssl://` from the same URL. If you set the plain port 7048, krig is silently given 8048. Kryptex is the only pool krig-miner will talk to, and 1% pool fee + krig's 0% devfee beats any 0% pool + SRBMiner's 2% devfee. The **region is auto-selected** at startup by TCP latency from the node (`prl prl-us prl-eu prl-br prl-sg prl-hk prl-ru prl-ae`); the log shows the probe results. Set `POOL_AUTO=0` to use `POOL` exactly as given. Alternative: HeroMiners, `stratum+tcp://ca.pearl.herominers.com:1200` (0% fee, PPS+; regions `ca us us2 us3 de es fi fr ru tr hk sg kr au br` are auto-probed the same way; krig is skipped there and SRBMiner takes over). |
 | `WORKER` | optional label; Salad's machine id is used if unset |
-| `MINERS` | order to try, default `krig srb bz wildrig`. Pin one with e.g. `MINERS=srb` |
+| `MINERS` | order to try, default `srb bz krig` (the measured Ampere ranking). Pin one with e.g. `MINERS=srb` |
 | `NO_SHARE_TIMEOUT` | seconds a miner gets to produce an accepted share before the next is tried (default `600` — Pearl shares are STARK proofs and the first one can be slow on weak cards) |
 | `KRIG_EXTRA_ARGS` / `SRB_EXTRA_ARGS` / `BZ_EXTRA_ARGS` / `WILDRIG_EXTRA_ARGS` | optional extra flags per miner |
 | `POWER_CAP_MIN_PCT` | `70`. At startup the entrypoint reads the card's current power limit and its default from `nvidia-smi`. Below this percentage the host has power-capped the card (a 3080 Ti at 176 W of 350 W hashed ~20 TH/s instead of ~116) and the replica is handed back to Salad for a different node. Salad excludes a rejected node from the group for a while, so keep this loose. |
@@ -129,9 +131,12 @@ Open the container's logs in the Salad portal. You should see:
 
 1. `nvidia-smi` printing the card name, driver version and VRAM.
 2. `Probing Kryptex Pearl regions` followed by `Using nearest region`.
-3. `=== [krig] starting ...` then, within a few minutes,
-   `=== [krig] ACCEPTED SHARE - this miner works on this node ===` (or the
-   same for `srb`, `bz` or `wildrig` if earlier miners were skipped).
+3. `NVIDIA power limit: ... W of ... W default (..%)`. If the host is capped,
+   the next lines are `HOST IS POWER-CAPPED` and the reallocation request;
+   the replacement instance is the one to read.
+4. `=== [srb] starting ...` then, within a few minutes,
+   `=== [srb] ACCEPTED SHARE - this miner works on this node ===` (or the
+   same for `bz` or `krig` if earlier miners were skipped).
 
 Then check `https://pool.kryptex.com/prl` with your wallet address to see
 hashrate and estimated earnings; compare that to what Salad bills per hour.
@@ -146,7 +151,7 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
 | Instance fails/reallocates with an **empty** log | The base image's `NVIDIA_REQUIRE_CUDA` gate refused the node's driver before the entrypoint ran. This image clears that variable in the Dockerfile; if you rebased onto a stock `nvidia/cuda` image, add `ENV NVIDIA_REQUIRE_CUDA=` back. |
 | RTX 50-series node, miner reports no CUDA device / kernel load error | Blackwell needs CUDA 12.8+ kernels. The base is 12.8; krig ships its own `sm_120` kernels. If SRBMiner/BzMiner fail here, pin `MINERS=krig`. |
 | `no accepted share after 600s - killing and trying next miner` | That miner can't hash on this node; the entrypoint moves on. Once you see `ACCEPTED SHARE - this miner works`, pin it with `MINERS=<name>` to skip the probing on future reallocations. |
-| WildRig: `no OpenCL platforms` / `CL_...` errors | Expected if NVIDIA OpenCL isn't available under WSL2. That's why it's last. |
+| SRBMiner `CL_UNKNOWN_ERROR when getting number of OpenCL platforms`, BzMiner `no OpenCL platforms` | Harmless. NVIDIA's WSL driver has no OpenCL; both miners log it and use CUDA. |
 | Shares rejected as stale, pool latency > ~150 ms | Node is far from the pool region. With `POOL_AUTO=1` (default) the entrypoint picks the nearest region of whichever pool is in use; check the `Probing ... regions` lines. |
 | `WARNING: Pearl mainnet addresses start with 'prl1p'` | Wrong wallet. Wrapped Pearl (WPRL, an Ethereum `0x…` address) is not a mining payout address. |
 | Instance keeps restarting | Batch priority nodes get reallocated; that's normal. Check for `ERROR: set the WALLET` in logs. |
@@ -179,10 +184,9 @@ parses the hashrate the miner reports, applies that miner's devfee, and prints:
 
 ```
  MINER    STATUS   REPORTED TH/s  SAMPLES  SHARES  DEVFEE EFFECTIVE TH/s
- krig     ok             231.50        9       4      0%         231.50
- srb      ok             240.20       12       4      2%         235.40
- bz       ok             225.00       12       3      2%         220.50
- wildrig  failed              0        0       0      0%           0.00
+ srb      ok              91.94       12       1      2%          90.10
+ bz       ok              88.60       10       3      2%          86.83
+ krig     ok              67.19       10       0      0%          67.19
  RECOMMENDED for this GPU class:  MINERS=srb
 ```
 
@@ -230,6 +234,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.4.0 | 2026-09-24 | WildRig removed (OpenCL-only; no OpenCL on Salad NVIDIA nodes, verified four ways). Default `MINERS` is now `srb bz krig`, the measured Ampere ranking, so a group mines on the right miner without setting anything. Bench runs three miners, 15 min instead of 20. |
 | v1.3.0 | 2026-09-24 | Periodic host check while mining (`POWER_CHECK_INTERVAL`, `POWER_CAP_GRACE`): re-reads the power limit and thermal-slowdown flags every minute and reallocates after three bad readings. Catches temperature-target hosts that pass the cold startup check and then trim the limit under load. Bench does the same. |
 | v1.2.0 | 2026-09-24 | Base image `nvidia/cuda:12.8.1-base` instead of `-runtime`: download drops from 2.3 GB to ~0.4 GB, so reallocations come back faster. The `inspect-miner-deps` workflow showed no miner uses the CUDA toolkit (krig dlopens the driver's `libcuda.so.1`, BzMiner is static, SRBMiner links only libc, WildRig uses apt's OpenCL loader). Same miners, same entrypoint. |
 | v1.1.0 | 2026-09-24 | Reject power-capped hosts at startup: reads `nvidia-smi` power limit vs default, and below `POWER_CAP_MIN_PCT` (70) asks Salad's metadata service to reallocate the replica. `POWER_CAP_ACTION=warn` to only log. The 3080 Ti node from the first bench would have been rejected in its first second. |
@@ -242,7 +247,7 @@ first verified build.
 
 ## Files
 
-- `Dockerfile` — image definition (CUDA 12.8 *base* image + krig-miner, SRBMiner, BzMiner, WildRig, ~0.4 GB); two stages, `miner` (production) and `bench`
+- `Dockerfile` — image definition (CUDA 12.8 *base* image + SRBMiner, BzMiner, krig-miner, ~0.3 GB); two stages, `miner` (production) and `bench`
 - `.github/workflows/inspect.yml` — on-demand: prints what each bundled miner links against and dlopens, for deciding what the image must ship
 - `common.sh` — shared by both entrypoints: GPU check, pool region probe, miner commands, share detector, hashrate parser
 - `entrypoint.sh` — production: miner selection by accepted shares
