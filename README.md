@@ -214,6 +214,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.2.0 | 2026-09-24 | Base image `nvidia/cuda:12.8.1-base` instead of `-runtime`: download drops from 2.3 GB to ~0.4 GB, so reallocations come back faster. The `inspect-miner-deps` workflow showed no miner uses the CUDA toolkit (krig dlopens the driver's `libcuda.so.1`, BzMiner is static, SRBMiner links only libc, WildRig uses apt's OpenCL loader). Same miners, same entrypoint. |
 | v1.1.0 | 2026-09-24 | Reject power-capped hosts at startup: reads `nvidia-smi` power limit vs default, and below `POWER_CAP_MIN_PCT` (70) asks Salad's metadata service to reallocate the replica. `POWER_CAP_ACTION=warn` to only log. The 3080 Ti node from the first bench would have been rejected in its first second. |
 | v1.0.0 | 2026-09-24 | Same code as v0.3.2, promoted: first verified run on a Salad NVIDIA node (RTX 3080 Ti, driver 616.56, CUDA 12.8 base, driver gate cleared). krig, SRBMiner and BzMiner all hash and SRBMiner's share was accepted; WildRig confirmed dead without OpenCL. |
 | v0.3.2 | 2026-09-24 | BzMiner prints its device table every 5 min instead of every 30 s (Salad's group log view caps at 1000 rows); `--no-color`. |
@@ -224,7 +225,8 @@ first verified build.
 
 ## Files
 
-- `Dockerfile` — image definition (CUDA 12.8 runtime base + krig-miner, SRBMiner, BzMiner, WildRig); two stages, `miner` (production) and `bench`
+- `Dockerfile` — image definition (CUDA 12.8 *base* image + krig-miner, SRBMiner, BzMiner, WildRig, ~0.4 GB); two stages, `miner` (production) and `bench`
+- `.github/workflows/inspect.yml` — on-demand: prints what each bundled miner links against and dlopens, for deciding what the image must ship
 - `common.sh` — shared by both entrypoints: GPU check, pool region probe, miner commands, share detector, hashrate parser
 - `entrypoint.sh` — production: miner selection by accepted shares
 - `bench.sh` — benchmark image: hashrate table + `MINERS=` recommendation

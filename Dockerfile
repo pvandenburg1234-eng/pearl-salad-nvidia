@@ -20,10 +20,12 @@
 #    * Salad nodes are Windows PCs; containers run under WSL2 with the NVIDIA
 #      container toolkit. The host injects the driver (libcuda.so.1,
 #      libnvidia-ml.so.1, nvidia-smi) - the image must NOT ship a driver.
-#    * The image must be a CUDA image. This one is nvidia/cuda 12.8 runtime
+#    * The image must be a CUDA image. This one is nvidia/cuda 12.8 "base"
 #      (Salad requires CUDA 12.8 for RTX 50-series / Blackwell), with the
 #      base image's driver-version gate (NVIDIA_REQUIRE_CUDA) cleared so
 #      older-driver 30/40-series nodes are not refused at container start.
+#      The miners bring their own kernels and only need libcuda from the
+#      driver, so no CUDA toolkit is shipped (~0.4 GB download, not 2.3).
 #    * NVIDIA_VISIBLE_DEVICES=all and NVIDIA_DRIVER_CAPABILITIES=compute,utility
 #      come from the base image; they are what tells the toolkit to inject
 #      the driver. Don't unset them.
@@ -70,11 +72,16 @@
 #    bills you BEFORE scaling replicas.
 # ============================================================================
 
-# CUDA runtime image: ships cudart/nvrtc for miners that load them
-# dynamically, but no driver. 12.8 is the first CUDA with Blackwell (sm_120)
-# support - SaladCloud requires workloads for RTX 50-series to be built with
-# CUDA 12.8 - and it is still smaller than the ROCm sibling.
-FROM nvidia/cuda:12.8.1-runtime-ubuntu24.04 AS base
+# CUDA "base" image: the NVIDIA env vars that make the container toolkit inject
+# the host driver (libcuda.so.1, nvidia-smi), and nothing else. We inspected
+# the miners (see .github/workflows/inspect.yml): krig dlopens libcuda.so.1
+# straight from the driver, BzMiner is fully static, SRBMiner links only libc,
+# and WildRig wants an OpenCL loader that apt provides. None of them use the
+# CUDA toolkit, so the 2.8 GB "runtime" flavour (cudart, cublas, cufft, ...)
+# was dead weight: it took the download from ~0.4 GB to 2.3 GB on every Salad
+# reallocation. 12.8 is the first CUDA with Blackwell (sm_120) support, which
+# SaladCloud requires for RTX 50-series.
+FROM nvidia/cuda:12.8.1-base-ubuntu24.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive
 
