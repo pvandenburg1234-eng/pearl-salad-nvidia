@@ -101,6 +101,8 @@ Environment variables:
 | `MINERS` | order to try, default `krig srb bz wildrig`. Pin one with e.g. `MINERS=srb` |
 | `NO_SHARE_TIMEOUT` | seconds a miner gets to produce an accepted share before the next is tried (default `600` — Pearl shares are STARK proofs and the first one can be slow on weak cards) |
 | `KRIG_EXTRA_ARGS` / `SRB_EXTRA_ARGS` / `BZ_EXTRA_ARGS` / `WILDRIG_EXTRA_ARGS` | optional extra flags per miner |
+| `POWER_CAP_MIN_PCT` | `70`. At startup the entrypoint reads the card's current power limit and its default from `nvidia-smi`. Below this percentage the host has power-capped the card (a 3080 Ti at 176 W of 350 W hashed ~20 TH/s instead of ~116) and the replica is handed back to Salad for a different node. Salad excludes a rejected node from the group for a while, so keep this loose. |
+| `POWER_CAP_ACTION` | `reallocate` (call Salad's metadata service, wait to be stopped) or `warn` (log it and mine anyway). Off Salad the service doesn't exist and it always just warns. |
 
 There is no `ALGO` variable: every miner spells pearlhash differently
 (`--coin pearl`, `--algorithm pearlhash`, `-a pearl`, `--algo pearlhash`), so
@@ -123,6 +125,7 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
 
 | Symptom | Cause / fix |
 |---|---|
+| `HOST IS POWER-CAPPED` then `asking Salad to reallocate` | Working as intended: the host runs the card well below its default power limit and would hash at a fraction of the class rate. Salad moves the replica within a minute or two. If a whole class keeps getting rejected, lower `POWER_CAP_MIN_PCT` or set `POWER_CAP_ACTION=warn`. |
 | `nvidia-smi not found` or `nvidia-smi failed` | The driver wasn't injected. Either the group is on an AMD class (use `pearl-salad`), or `NVIDIA_VISIBLE_DEVICES` / `NVIDIA_DRIVER_CAPABILITIES` were overridden in the env vars. Leave them alone. |
 | Instance fails/reallocates with an **empty** log | The base image's `NVIDIA_REQUIRE_CUDA` gate refused the node's driver before the entrypoint ran. This image clears that variable in the Dockerfile; if you rebased onto a stock `nvidia/cuda` image, add `ENV NVIDIA_REQUIRE_CUDA=` back. |
 | RTX 50-series node, miner reports no CUDA device / kernel load error | Blackwell needs CUDA 12.8+ kernels. The base is 12.8; krig ships its own `sm_120` kernels. If SRBMiner/BzMiner fail here, pin `MINERS=krig`. |
@@ -211,6 +214,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.1.0 | 2026-09-24 | Reject power-capped hosts at startup: reads `nvidia-smi` power limit vs default, and below `POWER_CAP_MIN_PCT` (70) asks Salad's metadata service to reallocate the replica. `POWER_CAP_ACTION=warn` to only log. The 3080 Ti node from the first bench would have been rejected in its first second. |
 | v1.0.0 | 2026-09-24 | Same code as v0.3.2, promoted: first verified run on a Salad NVIDIA node (RTX 3080 Ti, driver 616.56, CUDA 12.8 base, driver gate cleared). krig, SRBMiner and BzMiner all hash and SRBMiner's share was accepted; WildRig confirmed dead without OpenCL. |
 | v0.3.2 | 2026-09-24 | BzMiner prints its device table every 5 min instead of every 30 s (Salad's group log view caps at 1000 rows); `--no-color`. |
 | v0.3.1 | 2026-09-24 | Bench parser: BzMiner summary rows carry `pool hr | miner hr` once shares arrive; take the miner column, not the pool estimate. |

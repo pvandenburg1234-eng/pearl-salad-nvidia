@@ -61,6 +61,61 @@ check_wallet() {
 }
 
 # ---------------------------------------------------------------------------
+# Salad instance metadata service (IMDS): ask to be moved to another node.
+# Salad stops this container shortly after a 2xx and temporarily excludes the
+# node from the group's pool. Returns 1 when the IMDS isn't reachable (local
+# run, or not on Salad) so callers can fall back to just warning.
+# ---------------------------------------------------------------------------
+salad_reallocate() {
+  reason="$1"
+  echo "=== asking Salad to reallocate this replica: $reason ==="
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST \
+    http://169.254.169.254/v1/reallocate \
+    -H 'Content-Type: application/json' -H 'Metadata: true' \
+    --data "{\"reason\":\"$reason\"}" 2>/dev/null)"
+  case "$code" in
+    2*) echo "=== reallocation accepted (HTTP $code) - Salad will stop this container ==="; return 0 ;;
+  esac
+  echo "=== Salad IMDS not reachable (HTTP ${code:-none}) - not on Salad? carrying on ==="
+  return 1
+}
+
+# NVIDIA-only: reject a host whose owner has power-capped the card. Salad
+# hosts are gaming PCs and some run the GPU at half its TDP to keep it quiet;
+# a 3080 Ti at 176 W of 350 W hashed ~20 TH/s instead of ~116. nvidia-smi
+# reports both the current and the default limit, so this is knowable in the
+# first second rather than after an hour of a fifth of the rate.
+#   POWER_CAP_MIN_PCT   reject below this % of the default limit (default 70)
+#   POWER_CAP_ACTION    reallocate (default) | warn
+# AMD hosts expose none of this under WSL, so gpu_check skips it there.
+nvidia_power_check() {
+  q="$(nvidia-smi --query-gpu=power.limit,power.default_limit,clocks.max.sm --format=csv,noheader,nounits 2>/dev/null | head -1)"
+  limit="$(echo "$q" | awk -F', *' '{print $1}')"
+  deflt="$(echo "$q" | awk -F', *' '{print $2}')"
+  maxsm="$(echo "$q" | awk -F', *' '{print $3}')"
+  case "$limit$deflt" in
+    *[!0-9.]*|"") echo "=== NVIDIA power limit: not reported by this driver ($q) - skipping cap check ==="; return 0 ;;
+  esac
+  pct="$(awk -v l="$limit" -v d="$deflt" 'BEGIN { if (d > 0) printf "%d", l * 100 / d; else print 0 }')"
+  echo "=== NVIDIA power limit: ${limit} W of ${deflt} W default (${pct}%), max SM clock ${maxsm:-?} MHz ==="
+  min="${POWER_CAP_MIN_PCT:-70}"
+  if [ "$pct" -ge "$min" ]; then
+    return 0
+  fi
+  echo "=== HOST IS POWER-CAPPED: ${pct}% < ${min}% - this node will hash far below its class ==="
+  if [ "${POWER_CAP_ACTION:-reallocate}" = reallocate ]; then
+    if salad_reallocate "GPU power-capped by host: ${limit}W of ${deflt}W (${pct}%)"; then
+      # Salad kills the container within a minute or two; don't start a miner
+      # that would then be interrupted mid-proof. Wait for the SIGTERM.
+      isleep 180
+      echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+      exit 1
+    fi
+  fi
+  echo "=== continuing on the capped host (POWER_CAP_ACTION=${POWER_CAP_ACTION:-reallocate}, IMDS unavailable or action=warn) ==="
+}
+
+# ---------------------------------------------------------------------------
 # GPU readiness check. Sets GPU_DESC (gfx target on AMD, card name on NVIDIA).
 # ---------------------------------------------------------------------------
 gpu_check() {
@@ -71,6 +126,7 @@ gpu_check() {
     if command -v nvidia-smi >/dev/null 2>&1; then
       if nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1; then
         GPU_DESC="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+        nvidia_power_check
       else
         echo "nvidia-smi failed - the host driver was not injected. Is this an NVIDIA GPU class?"
       fi
