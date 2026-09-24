@@ -51,7 +51,7 @@ please update the list above with the card and hashrate.
 | RTX 3080 Ti (2nd host) | SRBMiner 3.6.9 | 80 TH/s at 219 W | same host, settled at the temperature target. Still ahead of krig. | 2026-09-24 |
 | RTX 3080 Ti (2nd host) | BzMiner 100.36 | 75.5 TH/s at 223 W | same host; core 930 MHz. Same ordering as the 3080: SRBMiner > BzMiner > krig on Ampere. | 2026-09-24 |
 | RTX 3080 (uncapped host) | SRBMiner 3.6.9 | **113.8 TH/s** at 349.5 W | first full-power Ampere host: core 1680 MHz, 77 °C, fan 58%. Above the ~105 public figure. At $0.06/h Lowest that is ~2.5x return, ahead of the 9070 XT; at $0.087/h Low it is ~1.7x. | 2026-09-24 |
-| RTX 3080 12 GB (2nd uncapped host) | BzMiner 100.36 | 110.5 TH/s at ~347 W | core 1650 MHz, 0.318 TH/W. 3% behind SRBMiner, the same gap as on the capped hosts. 2 of 5 NVIDIA hosts uncapped so far. | 2026-09-24 |
+| RTX 3080 (same uncapped host, bench) | BzMiner 100.36 | 110.5 TH/s at ~347 W | core 1650 MHz, 0.318 TH/W. 3% behind SRBMiner in the same bench run, the same gap as on the capped hosts. 1 of 4 NVIDIA hosts uncapped so far. | 2026-09-24 |
 
 Per-class picks so far (see the AMD sibling for RDNA4):
 
