@@ -1,0 +1,54 @@
+# On-demand: what do the bundled miners actually link against? Used to decide
+# whether the image can drop the 2 GB CUDA runtime layer and build on the
+# nvidia/cuda "base" flavour (driver libs only, injected by Salad at runtime).
+#
+# Run from the Actions tab, or:  gh workflow run inspect.yml -f tag=v1.1.0
+name: inspect-miner-deps
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: image tag to inspect
+        default: latest
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Inspect
+        run: |
+          IMG="ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/pearl-salad-nvidia:${{ inputs.tag }}"
+          docker pull -q "$IMG"
+          docker run --rm --entrypoint sh "$IMG" -c '
+            set -e
+            apt-get update -qq >/dev/null && apt-get install -y -qq binutils file >/dev/null
+            for b in /opt/krig/krig-miner /opt/srb/SRBMiner-MULTI /opt/bz/bzminer /opt/wildrig/wildrig-multi; do
+              echo "=================================================================="
+              echo "== $b"
+              file -b "$b" | cut -c1-120
+              echo "-- DT_NEEDED (direct link-time dependencies):"
+              readelf -d "$b" 2>/dev/null | grep NEEDED | sed "s/.*\[\(.*\)\]/     \1/" || echo "     (static or not ELF)"
+              echo "-- ldd resolution (== not found == means it would fail to start):"
+              ldd "$b" 2>&1 | grep -iE "cuda|cublas|nvrtc|nvidia|hip|amd|rocm|opencl|not found" | sed "s/^/     /" || true
+              echo "-- CUDA/toolkit library names embedded in the binary (dlopen candidates):"
+              strings -n 8 "$b" | grep -oE "lib(cuda|cudart|cublas|cublasLt|nvrtc|nvidia-ml|nvptxcompiler|curand|cufft|OpenCL|amdhip64|hiprtc|rocblas)[A-Za-z0-9_.-]*\.so[.0-9]*" | sort -u | sed "s/^/     /" || true
+            done
+            echo "=================================================================="
+            echo "== shared libraries bundled next to the miners:"
+            find /opt -name "*.so*" | sed "s/^/     /"
+            echo "== CUDA toolkit libraries present in this image (the runtime layer):"
+            ls /usr/local/cuda*/lib64 2>/dev/null | grep -E "^lib" | head -40 | sed "s/^/     /"
+            echo "== image size breakdown:"
+            du -sh /usr/local/cuda* /opt/* 2>/dev/null | sed "s/^/     /"
+          '
