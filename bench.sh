@@ -29,6 +29,8 @@ BENCH_SECONDS="${BENCH_SECONDS:-300}"
 BENCH_SKIP_SAMPLES="${BENCH_SKIP_SAMPLES:-2}"
 BENCH_THEN="${BENCH_THEN:-mine}"
 BENCH_HOLD="${BENCH_HOLD:-3600}"
+# More hashrate samples per window than production's 5-minute table cadence.
+BZ_TABLE_INTERVAL_MS="${BZ_TABLE_INTERVAL_MS:-60000}"
 LOG=/tmp/miner.log
 RESULTS=/tmp/bench.results
 

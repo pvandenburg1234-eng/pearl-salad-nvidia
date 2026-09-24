@@ -206,8 +206,14 @@ miner_cmd() {
         ${SRB_EXTRA_ARGS:-}
       ;;
     bz)
+      # BzMiner reprints a ~15-line device table every 30 s by default. Five
+      # nodes of that fill Salad's 1000-row group log view in ~20 minutes and
+      # it stops scrolling. Its one-line "pearl hashrate N shares=N" summary
+      # still comes every 60 s, which is all the detector/parser need, so
+      # print the table every 5 min in production (bench.sh uses 60 s).
       echo "$MINER_ROOT/bz/bzminer" -a pearl -p "$POOL" -w "$WALLET" --worker "$WORKER_NAME" \
-        --pass x --cpu 0 ${BZ_EXTRA_ARGS:-}
+        --pass x --cpu 0 --no-color --log-table-interval "${BZ_TABLE_INTERVAL_MS:-300000}" \
+        ${BZ_EXTRA_ARGS:-}
       ;;
     wildrig)
       echo "$MINER_ROOT/wildrig/wildrig-multi" --algo pearlhash --url "$POOL" --user "$USER_ARG" \
