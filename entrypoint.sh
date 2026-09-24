@@ -47,6 +47,7 @@ run_miner() {
   confirmed=0
   while :; do
     isleep 10
+    host_check_tick "$name" "$pipeline_pid"
     alive=1
     kill -0 "$pipeline_pid" 2>/dev/null || alive=0
     # Check the log BEFORE judging an exit, so a miner that got shares and

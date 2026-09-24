@@ -69,6 +69,7 @@ bench_miner() {
   status=ok
   while :; do
     isleep 10
+    host_check_tick "$name" "$pipeline_pid"
     if ! kill -0 "$pipeline_pid" 2>/dev/null; then
       wait "$pipeline_pid" 2>/dev/null
       echo "=== [$name] exited on its own after $(( $(date +%s) - start ))s ==="

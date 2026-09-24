@@ -115,6 +115,78 @@ nvidia_power_check() {
   echo "=== continuing on the capped host (POWER_CAP_ACTION=${POWER_CAP_ACTION:-reallocate}, IMDS unavailable or action=warn) ==="
 }
 
+# Periodic version of the cap check, for hosts that lower the limit AFTER the
+# card is under load. A temperature target in the owner's tuning software
+# trims the power limit step by step once the card warms up (a 3080 Ti went
+# 350 -> 308 -> 242 -> 220 W in its first two minutes), and the driver's own
+# thermal slowdown pulls clocks without touching the limit. The startup check
+# runs on a cold card and sees neither. The miner loops call this every
+# 10 s; it does real work every POWER_CHECK_INTERVAL seconds and acts after
+# POWER_CAP_GRACE consecutive bad readings, so a momentary dip costs nothing.
+#   POWER_CHECK_INTERVAL  seconds between readings (default 60; 0 disables)
+#   POWER_CAP_GRACE       consecutive bad readings before acting (default 3)
+#   POWER_CAP_MIN_PCT / POWER_CAP_ACTION as for the startup check
+# Usage: host_check_tick MINER_NAME PIPELINE_PID
+HOST_CHECK_BAD=0; HOST_CHECK_LAST_PCT=-1; HOST_CHECK_DISABLED=0; HOST_CHECK_NEXT=0
+host_check_tick() {
+  [ "$MINER_VENDOR" = nvidia ] || return 0
+  [ "$HOST_CHECK_DISABLED" = 1 ] && return 0
+  iv="${POWER_CHECK_INTERVAL:-60}"
+  [ "$iv" -gt 0 ] 2>/dev/null || return 0
+  now="$(date +%s)"
+  [ "$now" -lt "$HOST_CHECK_NEXT" ] && return 0
+  HOST_CHECK_NEXT=$((now + iv))
+
+  q="$(nvidia-smi --query-gpu=power.limit,power.default_limit,power.draw,temperature.gpu,clocks.sm,clocks_throttle_reasons.hw_thermal_slowdown,clocks_throttle_reasons.sw_thermal_slowdown --format=csv,noheader,nounits 2>/dev/null | head -1)"
+  limit="$(echo "$q" | awk -F', *' '{print $1}')"
+  deflt="$(echo "$q" | awk -F', *' '{print $2}')"
+  draw="$(echo "$q"  | awk -F', *' '{print $3}')"
+  temp="$(echo "$q"  | awk -F', *' '{print $4}')"
+  sm="$(echo "$q"    | awk -F', *' '{print $5}')"
+  hwt="$(echo "$q"   | awk -F', *' '{print $6}')"
+  swt="$(echo "$q"   | awk -F', *' '{print $7}')"
+  case "$limit$deflt" in
+    *[!0-9.]*|"") return 0 ;;   # driver doesn't report it; nothing to judge
+  esac
+  pct="$(awk -v l="$limit" -v d="$deflt" 'BEGIN { if (d > 0) printf "%d", l * 100 / d; else print 0 }')"
+
+  bad=0; why=""
+  if [ "$pct" -lt "${POWER_CAP_MIN_PCT:-70}" ]; then
+    bad=1; why="power limit ${limit}W of ${deflt}W (${pct}%)"
+  fi
+  if [ "$hwt" = Active ] || [ "$swt" = Active ]; then
+    bad=1; why="${why:+$why, }thermal slowdown active (hw=${hwt} sw=${swt})"
+  fi
+
+  if [ "$bad" = 1 ]; then
+    HOST_CHECK_BAD=$((HOST_CHECK_BAD + 1))
+    echo "=== host check: $why; drawing ${draw:-?}W, ${temp:-?}C, SM ${sm:-?} MHz - bad reading ${HOST_CHECK_BAD}/${POWER_CAP_GRACE:-3} ==="
+    if [ "$HOST_CHECK_BAD" -ge "${POWER_CAP_GRACE:-3}" ]; then
+      echo "=== HOST IS THROTTLING: $why for ${HOST_CHECK_BAD} consecutive readings ==="
+      if [ "${POWER_CAP_ACTION:-reallocate}" = reallocate ]; then
+        if salad_reallocate "GPU throttled by host: $why"; then
+          [ -n "${2:-}" ] && kill_miner "$1" "$2"
+          isleep 180
+          echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+          exit 1
+        fi
+      fi
+      echo "=== continuing on the throttled host (POWER_CAP_ACTION=${POWER_CAP_ACTION:-reallocate}, IMDS unavailable or action=warn); periodic check off ==="
+      HOST_CHECK_DISABLED=1
+    fi
+  else
+    [ "$HOST_CHECK_BAD" -gt 0 ] && echo "=== host check: recovered - power limit ${limit}W of ${deflt}W (${pct}%) ==="
+    HOST_CHECK_BAD=0
+    # Heartbeat only when the limit has moved by 5 points or more, so a
+    # steady host adds nothing to the Salad log.
+    d=$((pct - HOST_CHECK_LAST_PCT)); [ "$d" -lt 0 ] && d=$((0 - d))
+    if [ "$HOST_CHECK_LAST_PCT" -ge 0 ] && [ "$d" -ge 5 ]; then
+      echo "=== host check: power limit ${limit}W of ${deflt}W (${pct}%), drawing ${draw:-?}W, ${temp:-?}C, SM ${sm:-?} MHz ==="
+    fi
+  fi
+  HOST_CHECK_LAST_PCT="$pct"
+}
+
 # ---------------------------------------------------------------------------
 # GPU readiness check. Sets GPU_DESC (gfx target on AMD, card name on NVIDIA).
 # ---------------------------------------------------------------------------

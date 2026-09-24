@@ -45,6 +45,8 @@ please update the list above with the card and hashrate.
 | RTX 3080 | krig 1.5.2 | 67 TH/s, 0.295 TH/W | production node; host capped at 228 W (~71% of 320 W), core 1155–1200 MHz, GPU only 56% busy | 2026-09-24 |
 | RTX 3080 | SRBMiner 3.6.9 | **92 TH/s**, 0.404 TH/W | same node and cap; core 1380 MHz. 37% faster than krig on Ampere. | 2026-09-24 |
 | RTX 3080 | BzMiner 100.36 | 88.6 TH/s, 0.390 TH/W | same node and cap; core 1350 MHz, 3 shares. 3.6% behind SRBMiner at the same devfee. | 2026-09-24 |
+| RTX 3080 Ti (2nd host) | krig 1.5.2 | 88.6 falling to 73 TH/s | slim v1.2.0 bench. Host has a ~70 °C temperature target: the power limit stepped 350 → 308 → 242 → 220 W in the first two minutes under load. Passed the cold startup check; this is what the periodic check (v1.3.0) is for. | 2026-09-24 |
+| RTX 3080 Ti (2nd host) | SRBMiner 3.6.9 | 80 TH/s at 219 W | same host, settled at the temperature target. Still ahead of krig. | 2026-09-24 |
 
 Per-class picks so far (see the AMD sibling for RDNA4):
 
@@ -113,6 +115,8 @@ Environment variables:
 | `KRIG_EXTRA_ARGS` / `SRB_EXTRA_ARGS` / `BZ_EXTRA_ARGS` / `WILDRIG_EXTRA_ARGS` | optional extra flags per miner |
 | `POWER_CAP_MIN_PCT` | `70`. At startup the entrypoint reads the card's current power limit and its default from `nvidia-smi`. Below this percentage the host has power-capped the card (a 3080 Ti at 176 W of 350 W hashed ~20 TH/s instead of ~116) and the replica is handed back to Salad for a different node. Salad excludes a rejected node from the group for a while, so keep this loose. |
 | `POWER_CAP_ACTION` | `reallocate` (call Salad's metadata service, wait to be stopped) or `warn` (log it and mine anyway). Off Salad the service doesn't exist and it always just warns. |
+| `POWER_CHECK_INTERVAL` | `60`. While a miner runs, re-read the power limit, draw, temperature and the driver's thermal-slowdown flags this often. Catches hosts whose tuning software trims the limit after the card warms up (a 3080 Ti went 350 → 308 → 242 → 220 W in two minutes under a 70 °C target), which the one-shot startup check on a cold card can't see. `0` disables. |
+| `POWER_CAP_GRACE` | `3`. Consecutive bad readings (limit below `POWER_CAP_MIN_PCT`, or thermal slowdown active) before the miner is stopped and the replica handed back. Three minutes by default, so a momentary dip costs nothing. |
 
 There is no `ALGO` variable: every miner spells pearlhash differently
 (`--coin pearl`, `--algorithm pearlhash`, `-a pearl`, `--algo pearlhash`), so
@@ -136,6 +140,7 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
 | Symptom | Cause / fix |
 |---|---|
 | `HOST IS POWER-CAPPED` then `asking Salad to reallocate` | Working as intended: the host runs the card well below its default power limit and would hash at a fraction of the class rate. Salad moves the replica within a minute or two. If a whole class keeps getting rejected, lower `POWER_CAP_MIN_PCT` or set `POWER_CAP_ACTION=warn`. |
+| `host check: ... bad reading N/3` then `HOST IS THROTTLING` | The host lowered the power limit or the driver is thermal-throttling after the card warmed up. After `POWER_CAP_GRACE` readings the miner is stopped and Salad moves the replica. The `host check:` lines carry the watts, temperature and clock, so a 70 °C target shows as the limit stepping down while the temperature sits at 70. |
 | `nvidia-smi not found` or `nvidia-smi failed` | The driver wasn't injected. Either the group is on an AMD class (use `pearl-salad`), or `NVIDIA_VISIBLE_DEVICES` / `NVIDIA_DRIVER_CAPABILITIES` were overridden in the env vars. Leave them alone. |
 | Instance fails/reallocates with an **empty** log | The base image's `NVIDIA_REQUIRE_CUDA` gate refused the node's driver before the entrypoint ran. This image clears that variable in the Dockerfile; if you rebased onto a stock `nvidia/cuda` image, add `ENV NVIDIA_REQUIRE_CUDA=` back. |
 | RTX 50-series node, miner reports no CUDA device / kernel load error | Blackwell needs CUDA 12.8+ kernels. The base is 12.8; krig ships its own `sm_120` kernels. If SRBMiner/BzMiner fail here, pin `MINERS=krig`. |
@@ -224,6 +229,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.3.0 | 2026-09-24 | Periodic host check while mining (`POWER_CHECK_INTERVAL`, `POWER_CAP_GRACE`): re-reads the power limit and thermal-slowdown flags every minute and reallocates after three bad readings. Catches temperature-target hosts that pass the cold startup check and then trim the limit under load. Bench does the same. |
 | v1.2.0 | 2026-09-24 | Base image `nvidia/cuda:12.8.1-base` instead of `-runtime`: download drops from 2.3 GB to ~0.4 GB, so reallocations come back faster. The `inspect-miner-deps` workflow showed no miner uses the CUDA toolkit (krig dlopens the driver's `libcuda.so.1`, BzMiner is static, SRBMiner links only libc, WildRig uses apt's OpenCL loader). Same miners, same entrypoint. |
 | v1.1.0 | 2026-09-24 | Reject power-capped hosts at startup: reads `nvidia-smi` power limit vs default, and below `POWER_CAP_MIN_PCT` (70) asks Salad's metadata service to reallocate the replica. `POWER_CAP_ACTION=warn` to only log. The 3080 Ti node from the first bench would have been rejected in its first second. |
 | v1.0.0 | 2026-09-24 | Same code as v0.3.2, promoted: first verified run on a Salad NVIDIA node (RTX 3080 Ti, driver 616.56, CUDA 12.8 base, driver gate cleared). krig, SRBMiner and BzMiner all hash and SRBMiner's share was accepted; WildRig confirmed dead without OpenCL. |
