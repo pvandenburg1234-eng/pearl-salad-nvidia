@@ -61,6 +61,9 @@ please update the list above with the card and hashrate.
 | RTX 5080 Laptop (bench, Low tier) | SRBMiner 3.6.9 | 122.6 TH/s at 150 W | 0.82 TH/W, the best efficiency of any card so far. Core 2050–2080 MHz. Temperature climbed 75 → 82 → 86 °C over the 5-min window at full 150 W. Reported power limit is `[N/A]` (default 80 W shown) - see `POWER_TEMP_MAX`. | 2026-09-25 |
 | RTX 5080 Laptop (same host) | BzMiner 100.36 | 119.0 TH/s | `blackwell-sm120-compact` profile, 3 shares. Laptop firmware trimmed it to 140 W / 1985 MHz at 86 °C by minute four. First Blackwell run: the CUDA 12.8 base works. | 2026-09-25 |
 | RTX 5080 Laptop (same host) | krig 1.5.2 | no result | refused the pool as "not the official Kryptex PRL pool" on the global endpoint: this host's network intercepts TLS (the region probe read 1–4 ms to every region worldwide; real latency 500 ms). Network, not the card. | 2026-09-25 |
+| RTX 5080 Laptop (2nd host, bench) | SRBMiner 3.6.9 | 126.5 TH/s at 158 W | opened at 175 W / 2235 MHz / 85 °C, then the laptop's firmware settled it at ~158 W / 2115 MHz / 86 °C and held there for 15 min with a flat hashrate. **86 °C is this class's steady state, not a fault.** Europe host, 47 ms. | 2026-09-25 |
+| RTX 5080 Laptop (2nd host) | BzMiner 100.36 | 124.0 TH/s at 156–162 W | 86 °C throughout, 1 share in 5 min. | 2026-09-25 |
+| RTX 5080 Laptop (2nd host) | krig 1.5.2 | 117.1 TH/s at 155 W | 4 shares; 93% of SRBMiner, 6% behind after devfee. Confirms the first host's krig failure was its network, not Blackwell. | 2026-09-25 |
 
 The percentage printed just before the clock in krig's and SRBMiner's stats
 lines is **fan speed**, not GPU utilization (SRBMiner's table header labels
@@ -72,6 +75,7 @@ Per-class picks so far (see the AMD sibling for RDNA4):
 |---|---|---|
 | RTX 3080 / 3080 Ti | `srb` | 113.8 vs BzMiner 110.5 vs krig 90.8 on an uncapped 3080, all three in one bench run; same order on two capped hosts. |
 | RTX 4070 (and likely other Ada) | `srb` | 107.6 vs BzMiner 107.7 (tie) vs krig 98.0 on one clean host. Either of the first two is fine. |
+| RTX 5080 Laptop | `srb` | 122–126 TH/s on two hosts (BzMiner 119–124, krig 117). Runs at 86 °C by design, ~150–160 W. At $0.08 Lowest that is ~2.0x, level with the 9070 XT on net dollars; the class had spare machines on the demand monitor. |
 | others | run the bench | |
 
 That 3080 Ti node was a bad sample: a 3080 Ti at full clocks benchmarks around
