@@ -192,6 +192,19 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
   the `*_EXTRA_ARGS` variables once you have it.
 - **Overclocking / power limits.** krig-miner has `--gpu-plimit` and friends,
   but they need NVML write access, which Salad containers don't have.
+- **Hashrate floor (`HASHRATE_MIN`).** A per-group minimum in TH/s: a worker
+  whose miner-reported rate stays under it for ten minutes would be handed
+  back to Salad. This is the only check that can see a merely *weak* host,
+  as opposed to a broken one. Two cases from 2026-09-25 that nothing catches
+  today: an RTX 5080 Laptop pinned by its owner's power profile at 95 W and
+  96 TH/s, cool at 66 °C, next to another at 175 W and 130 TH/s (laptops
+  report no power limit, so the cap is invisible to the power checks and
+  nothing is throttling), and an RX 9070 XT at 105 TH/s in a group doing
+  119 to 135 (AMD exposes no watts or temperature under Salad). Both were
+  still profitable, and the classes had no spare machines to swap to, so
+  this stays unbuilt for now. When built it would sit in `host_check_tick`
+  next to the power checks and use `parse_hashrate` on the miner log; the
+  floor is per class, so it is a group variable, not a default.
 
 ## Benchmarking the miners (`pearl-salad-nvidia-bench`)
 
