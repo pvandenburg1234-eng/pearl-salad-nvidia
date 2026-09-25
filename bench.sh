@@ -41,6 +41,7 @@ if [ -z "$GPU_DESC" ]; then
   exit 1
 fi
 resolve_pool
+pool_check_or_reallocate
 echo "=== Benchmark: $BENCH_SECONDS s per miner, order: $MINERS ==="
 
 : > "$RESULTS"
@@ -140,7 +141,11 @@ case "$BENCH_THEN" in
     exit 0 ;;
   *)
     if [ -z "$best" ]; then
-      echo "=== nothing to mine with; exiting ==="
+      # Exiting would just make Salad restart the bench on the same host.
+      echo "=== nothing to mine with on this node ==="
+      if salad_reallocate "bench: no miner produced a hashrate on this node"; then
+        isleep 180
+      fi
       exit 1
     fi
     echo "=== benchmark finished; mining with $best until the group is stopped ==="

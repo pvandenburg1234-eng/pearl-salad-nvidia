@@ -328,6 +328,92 @@ resolve_pool() {
 }
 
 # ---------------------------------------------------------------------------
+# Pool reachability. Two Salad laptop hosts in one day could not mine at all:
+# one where the TCP probe succeeded but no TLS handshake to port 8048 ever
+# completed (BzMiner: "TLS connect failed"; SRBMiner silent), and one where
+# something on the network intercepted TLS (the region probe read 1-4 ms to
+# every region on earth; krig then refused the pool as "not the official
+# Kryptex PRL pool" because the certificate wasn't Kryptex's). Neither host
+# was worth a single miner window, let alone the production image's
+# retry-forever loop.
+#
+# pool_check: sets POOL_STATE to one of
+#   ok           handshake + certificate verify (or plain TCP connect for
+#                non-TLS pools)
+#   intercepted  handshake works but the certificate does not verify: SRBMiner
+#                and BzMiner will mine, krig will refuse - so krig is skipped
+#   unreachable  no handshake (or no connect) to the chosen endpoint AND to
+#                the pool's global endpoint
+# Kryptex's stratum certificate verifies against public CAs (checked
+# 2026-09-25), so a verify failure really does mean interception.
+#   POOL_CHECK=0 disables.
+pool_check() {
+  POOL_STATE=ok
+  [ "${POOL_CHECK:-1}" = 1 ] || return 0
+  if [ "$POOL_TLS" = 1 ]; then
+    _tls_probe "$POOL_HOSTPORT"; st=$?
+    if [ "$st" = 2 ]; then
+      # Try the pool's global name once before giving up on the host.
+      alt="$(echo "$POOL_HOSTPORT" | sed -E 's#^prl(-[a-z0-9]+)?\.kryptex\.network#prl.kryptex.network#')"
+      if [ "$alt" != "$POOL_HOSTPORT" ]; then
+        echo "=== pool check: $POOL_HOSTPORT unreachable over TLS, trying $alt ==="
+        _tls_probe "$alt"; st=$?
+        if [ "$st" != 2 ]; then
+          POOL="$(echo "$POOL" | sed "s#$POOL_HOSTPORT#$alt#")"; POOL_HOSTPORT="$alt"; KRIG_HOSTPORT="$alt"
+        fi
+      fi
+    fi
+    case "$st" in
+      0) echo "=== pool check: TLS handshake and certificate OK ($POOL_HOSTPORT) ===" ;;
+      1) POOL_STATE=intercepted
+         echo "=== pool check: TLS handshake works but the certificate does NOT verify ($POOL_HOSTPORT) - this network intercepts TLS ==="
+         echo "=== pool check: SRBMiner/BzMiner can mine through it; krig would refuse the pool, so krig is skipped on this host ==="
+         KRIG_OK=0 ;;
+      *) POOL_STATE=unreachable
+         echo "=== pool check: no TLS handshake to $POOL_HOSTPORT (curl exit $_tls_rc) - this host cannot reach the pool ===" ;;
+    esac
+  else
+    t="$(curl -s -o /dev/null --max-time 6 -w '%{time_connect}' "telnet://$POOL_HOSTPORT" 2>/dev/null </dev/null)"
+    ms="$(echo "${t:-0}" | awk '{ printf "%d", $1 * 1000 }')"
+    if [ "$ms" -gt 0 ]; then
+      echo "=== pool check: TCP connect OK ($POOL_HOSTPORT, ${ms} ms) ==="
+    else
+      POOL_STATE=unreachable
+      echo "=== pool check: cannot connect to $POOL_HOSTPORT - this host cannot reach the pool ==="
+    fi
+  fi
+  [ "$POOL_STATE" = unreachable ] && return 1
+  return 0
+}
+
+# _tls_probe HOST:PORT -> 0 ok, 1 handshake-but-no-verify, 2 no handshake.
+# curl treats the stratum server as an HTTPS server that sends no HTTP reply:
+# exit 52/56/55 after a completed handshake are all "ok" here.
+_tls_probe() {
+  curl -s -o /dev/null --max-time 8 "https://$1/" 2>/dev/null; _tls_rc=$?
+  case "$_tls_rc" in
+    0|52|55|56|18|8) return 0 ;;
+    60|51|58|59)     # certificate problem: does a handshake work at all?
+      curl -s -o /dev/null --max-time 8 -k "https://$1/" 2>/dev/null; _tls_rc2=$?
+      case "$_tls_rc2" in 0|52|55|56|18|8) return 1 ;; *) _tls_rc=$_tls_rc2; return 2 ;; esac ;;
+    *) return 2 ;;
+  esac
+}
+
+# Convenience for the entrypoints: check, and hand the node back if the pool
+# is unreachable (falls through with a warning when the IMDS isn't there).
+pool_check_or_reallocate() {
+  pool_check && return 0
+  if salad_reallocate "pool $POOL_HOSTPORT unreachable from this host (curl exit ${_tls_rc:-?})"; then
+    isleep 180
+    echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+    exit 1
+  fi
+  echo "=== continuing anyway (IMDS unavailable); the miners will most likely all time out ==="
+  return 1
+}
+
+# ---------------------------------------------------------------------------
 # Miners
 # ---------------------------------------------------------------------------
 # Print the miner command for a given name. Every miner spells the algorithm

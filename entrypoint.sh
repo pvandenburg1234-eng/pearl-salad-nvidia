@@ -28,6 +28,7 @@ echo "=== pearl-salad ($MINER_VENDOR) image version: ${IMAGE_VERSION:-unknown} =
 gpu_check
 echo "=== miner order: $MINERS ==="
 resolve_pool
+pool_check_or_reallocate
 
 run_miner() {
   name="$1"
@@ -36,6 +37,7 @@ run_miner() {
     echo "=== [$name] $reason - skipping ==="
     return 1
   fi
+  RAN_ANY=1
   : > "$LOG"
   echo "=== [$name] starting: $(miner_cmd "$name") ==="
   cd "$MINER_ROOT/$name"
@@ -86,14 +88,40 @@ run_miner() {
   done
 }
 
+# A node where every miner fails is a node that can't mine (bad network, bad
+# driver, GPU gone). Before this the loop retried forever, billing the whole
+# time. After MAX_FAILED_PASSES full passes with no accepted share from any
+# miner that actually ran, hand the node back. A pass where nothing ran at
+# all (every miner skipped) is a configuration problem, not a bad node, so it
+# is logged and retried instead.
+#   MAX_FAILED_PASSES   default 1 (= NO_SHARE_TIMEOUT x miners that ran)
+FAILED_PASSES=0
 while :; do
+  RAN_ANY=0; PASS_OK=0
   for m in $MINERS; do
     if run_miner "$m"; then
       # It worked then died (pool drop / node hiccup): stick with this miner.
       MINERS="$m"
+      PASS_OK=1
       break
     fi
   done
+  if [ "$PASS_OK" = 1 ]; then
+    FAILED_PASSES=0
+  elif [ "$RAN_ANY" = 0 ]; then
+    echo "=== no miner could even start (all skipped) - check MINERS and POOL; retrying, not reallocating ==="
+  else
+    FAILED_PASSES=$((FAILED_PASSES + 1))
+    echo "=== no miner produced an accepted share this pass (${FAILED_PASSES}/${MAX_FAILED_PASSES:-1}) ==="
+    if [ "$FAILED_PASSES" -ge "${MAX_FAILED_PASSES:-1}" ]; then
+      if salad_reallocate "no miner produced a share after $FAILED_PASSES full pass(es) of $MINERS"; then
+        isleep 180
+        echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+        exit 1
+      fi
+      echo "=== IMDS unavailable - will keep retrying on this node ==="
+    fi
+  fi
   echo "=== restarting in 15s ==="
   isleep 15
 done

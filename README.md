@@ -135,6 +135,8 @@ Environment variables:
 | `WORKER` | optional label; Salad's machine id is used if unset |
 | `MINERS` | order to try, default `srb bz krig` (the measured Ampere ranking). Pin one with e.g. `MINERS=srb` |
 | `NO_SHARE_TIMEOUT` | seconds a miner gets to produce an accepted share before the next is tried (default `600` — Pearl shares are STARK proofs and the first one can be slow on weak cards) |
+| `POOL_CHECK` | `1`. After the region is picked, open a TLS connection to the pool and verify its certificate (curl, 8 s). No handshake at all, not even to the global `prl.kryptex.network:8048`, means the host cannot reach the pool, and the replica is handed back to Salad right away instead of paying `NO_SHARE_TIMEOUT` per miner for nothing (a 5070 Ti Laptop host did exactly that: TCP fine, every TLS connect failed, GPU idle). Handshake works but the certificate does not verify means something on the host's network intercepts TLS: SRBMiner and BzMiner mine through it, krig refuses such a pool as "not the official Kryptex PRL pool", so krig is skipped on that host and the next miner starts. `0` disables. |
+| `MAX_FAILED_PASSES` | `1`. Full passes through `MINERS` with no accepted share from any miner that ran, after which the replica is handed back to Salad (one pass is `NO_SHARE_TIMEOUT` x the miners that ran). Before this the loop retried forever on a node that could not mine. A pass where every miner was skipped is a configuration error and is retried, not reallocated. Off Salad it just keeps retrying. |
 | `KRIG_EXTRA_ARGS` / `SRB_EXTRA_ARGS` / `BZ_EXTRA_ARGS` / `WILDRIG_EXTRA_ARGS` | optional extra flags per miner |
 | `POWER_CAP_MIN_PCT` | `70`. At startup the entrypoint reads the card's current power limit and its default from `nvidia-smi`. Below this percentage the host has power-capped the card (a 3080 Ti at 176 W of 350 W hashed ~20 TH/s instead of ~116) and the replica is handed back to Salad for a different node. Salad excludes a rejected node from the group for a while, so keep this loose. |
 | `POWER_CAP_ACTION` | `reallocate` (call Salad's metadata service, wait to be stopped) or `warn` (log it and mine anyway). Off Salad the service doesn't exist and it always just warns. |
@@ -151,7 +153,8 @@ the entrypoint hardcodes it per miner.
 Open the container's logs in the Salad portal. You should see:
 
 1. `nvidia-smi` printing the card name, driver version and VRAM.
-2. `Probing Kryptex Pearl regions` followed by `Using nearest region`.
+2. `Probing Kryptex Pearl regions` followed by `Using nearest region` and
+   `pool check: TLS handshake and certificate OK`.
 3. `NVIDIA power limit: ... W of ... W default (..%)`. If the host is capped,
    the next lines are `HOST IS POWER-CAPPED` and the reallocation request;
    the replacement instance is the one to read.
@@ -172,6 +175,9 @@ hashrate and estimated earnings; compare that to what Salad bills per hour.
 | Instance fails/reallocates with an **empty** log | The base image's `NVIDIA_REQUIRE_CUDA` gate refused the node's driver before the entrypoint ran. This image clears that variable in the Dockerfile; if you rebased onto a stock `nvidia/cuda` image, add `ENV NVIDIA_REQUIRE_CUDA=` back. |
 | RTX 50-series node, miner reports no CUDA device / kernel load error | Blackwell needs CUDA 12.8+ kernels. The base is 12.8; krig ships its own `sm_120` kernels. If SRBMiner/BzMiner fail here, pin `MINERS=krig`. |
 | `no accepted share after 600s - killing and trying next miner` | That miner can't hash on this node; the entrypoint moves on. Once you see `ACCEPTED SHARE - this miner works`, pin it with `MINERS=<name>` to skip the probing on future reallocations. |
+| `pool check: no TLS handshake to ...` then `asking Salad to reallocate` | The node's network lets TCP through but no TLS session to the pool ever completes (seen on a 5070 Ti Laptop host: BzMiner `TLS connect failed`, SRBMiner silent, GPU idle). Nothing can mine there; Salad moves the replica. `POOL_CHECK=0` to skip the check. |
+| `pool check: TLS handshake works but the certificate does NOT verify` | The host's network intercepts TLS (on such a host the region probe reads 1-4 ms to every region on earth, and krig says `not the official Kryptex PRL pool`). SRBMiner and BzMiner mine through it; krig is skipped. |
+| `no miner produced an accepted share this pass` then `asking Salad to reallocate` | Every miner in `MINERS` ran and none got a share within `NO_SHARE_TIMEOUT`. The node can't mine (network, driver, GPU); Salad moves the replica. Raise `MAX_FAILED_PASSES` to retry on the same node first. |
 | SRBMiner `CL_UNKNOWN_ERROR when getting number of OpenCL platforms`, BzMiner `no OpenCL platforms` | Harmless. NVIDIA's WSL driver has no OpenCL; both miners log it and use CUDA. |
 | Shares rejected as stale, pool latency > ~150 ms | Node is far from the pool region. With `POOL_AUTO=1` (default) the entrypoint picks the nearest region of whichever pool is in use; check the `Probing ... regions` lines. |
 | `WARNING: Pearl mainnet addresses start with 'prl1p'` | Wrong wallet. Wrapped Pearl (WPRL, an Ethereum `0x…` address) is not a mining payout address. |
@@ -255,6 +261,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.5.0 | 2026-09-25 | Two node traps. `POOL_CHECK`: after region selection, a TLS handshake with certificate verification against the pool; no handshake (even to the global endpoint) hands the replica back to Salad at once, an unverifiable certificate marks the network as TLS-intercepting and skips krig. `MAX_FAILED_PASSES`: a full pass through `MINERS` with no accepted share from any miner hands the replica back instead of retrying forever; the bench does the same when no miner produced a hashrate. Both came from laptop hosts on 2026-09-25: a 5070 Ti Laptop where no TLS connect to 8048 ever completed (GPU idle, billed anyway), and a 5080 Laptop where an intercepting network made krig refuse the pool. Same shared scripts as pearl-salad v1.3.0. |
 | v1.4.1 | 2026-09-25 | Periodic host check works on laptops: when the driver reports no power limit (`[N/A]`, as every laptop GPU does) the thermal-slowdown flags are still evaluated, and a temperature ceiling `POWER_TEMP_MAX` (88 °C) covers drivers that report the flags as `[N/A]` too. Before this the check returned early on laptops and never looked. First 5080 Laptop bench: 122.6 TH/s SRBMiner at 150 W, 86 °C by minute five. |
 | v1.4.0 | 2026-09-24 | WildRig removed (OpenCL-only; no OpenCL on Salad NVIDIA nodes, verified four ways). Default `MINERS` is now `srb bz krig`, the measured Ampere ranking, so a group mines on the right miner without setting anything. Bench runs three miners, 15 min instead of 20. |
 | v1.3.0 | 2026-09-24 | Periodic host check while mining (`POWER_CHECK_INTERVAL`, `POWER_CAP_GRACE`): re-reads the power limit and thermal-slowdown flags every minute and reallocates after three bad readings. Catches temperature-target hosts that pass the cold startup check and then trim the limit under load. Bench does the same. |
