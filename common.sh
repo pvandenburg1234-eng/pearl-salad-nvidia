@@ -127,7 +127,7 @@ nvidia_power_check() {
 #   POWER_CAP_GRACE       consecutive bad readings before acting (default 3)
 #   POWER_CAP_MIN_PCT / POWER_CAP_ACTION as for the startup check
 # Usage: host_check_tick MINER_NAME PIPELINE_PID
-HOST_CHECK_BAD=0; HOST_CHECK_LAST_PCT=-1; HOST_CHECK_DISABLED=0; HOST_CHECK_NEXT=0
+HOST_CHECK_BAD=0; HOST_CHECK_LAST_PCT=-1; HOST_CHECK_DISABLED=0; HOST_CHECK_NEXT=0; HOST_CHECK_SW_NOTED=0
 host_check_tick() {
   [ "$MINER_VENDOR" = nvidia ] || return 0
   [ "$HOST_CHECK_DISABLED" = 1 ] && return 0
@@ -158,17 +158,32 @@ host_check_tick() {
     pct="$(awk -v l="$limit" -v d="$deflt" 'BEGIN { if (d > 0) printf "%d", l * 100 / d; else print 0 }')"
   fi
 
-  bad=0; why=""
-  if [ "$have_limit" = 1 ] && [ "$pct" -lt "${POWER_CAP_MIN_PCT:-70}" ]; then
-    bad=1; why="power limit ${limit}W of ${deflt}W (${pct}%)"
-  fi
-  if [ "$hwt" = Active ] || [ "$swt" = Active ]; then
-    bad=1; why="${why:+$why, }thermal slowdown active (hw=${hwt} sw=${swt})"
-  fi
   # Temperature ceiling as a fallback for hosts whose driver reports the
   # slowdown flags as [N/A]. NVIDIA laptop GPUs start pulling clocks at ~87 C.
   #   POWER_TEMP_MAX   degrees C (default 88; 0 disables)
   tmax="${POWER_TEMP_MAX:-88}"
+
+  bad=0; why=""
+  if [ "$have_limit" = 1 ] && [ "$pct" -lt "${POWER_CAP_MIN_PCT:-70}" ]; then
+    bad=1; why="power limit ${limit}W of ${deflt}W (${pct}%)"
+  fi
+  # Thermal flags. On a desktop card (power limit reported) either flag means
+  # the host is cutting the card under load. On a laptop (no limit reported)
+  # the SOFTWARE flag is just the firmware holding its temperature target: a
+  # 5080 Laptop on Salad reported sw=Active while sitting at 123-127 W, 84 C,
+  # 1950 MHz and 105 TH/s, and v1.5.0 threw that host away after 3 minutes.
+  # So on laptops only the hardware flag and the temperature ceiling count;
+  # the software flag is noted once for the record.
+  if [ "$hwt" = Active ]; then
+    bad=1; why="${why:+$why, }hardware thermal slowdown active (hw=${hwt} sw=${swt})"
+  elif [ "$swt" = Active ]; then
+    if [ "$have_limit" = 1 ]; then
+      bad=1; why="${why:+$why, }thermal slowdown active (hw=${hwt} sw=${swt})"
+    elif [ "$HOST_CHECK_SW_NOTED" = 0 ]; then
+      HOST_CHECK_SW_NOTED=1
+      echo "=== host check: software thermal slowdown reported at ${draw:-?}W, ${temp:-?}C, SM ${sm:-?} MHz - normal for a laptop holding its temperature target, not counted; the ${tmax}C ceiling and the hardware flag still apply ==="
+    fi
+  fi
   case "$temp" in
     ''|*[!0-9]*) ;;
     *) if [ "$tmax" -gt 0 ] 2>/dev/null && [ "$temp" -ge "$tmax" ]; then
