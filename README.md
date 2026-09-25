@@ -58,6 +58,10 @@ please update the list above with the card and hashrate.
 | RTX 4070 (same host, bench) | BzMiner 100.36 | 107.7 TH/s at 180 W | core 2550 MHz, 71 °C, 3 shares in 3 min. Dead heat with SRBMiner on Ada; the 3% Ampere gap does not carry over. | 2026-09-24 |
 | RTX 4070 (same host, bench) | krig 1.5.2 | 98.0 TH/s at 172 W | core 2550 MHz, 70 °C, 0.57 TH/W. 91% of the leaders on Ada (80% on Ampere); its 0% devfee still doesn't cover the gap. | 2026-09-24 |
 
+| RTX 5080 Laptop (bench, Low tier) | SRBMiner 3.6.9 | 122.6 TH/s at 150 W | 0.82 TH/W, the best efficiency of any card so far. Core 2050–2080 MHz. Temperature climbed 75 → 82 → 86 °C over the 5-min window at full 150 W. Reported power limit is `[N/A]` (default 80 W shown) - see `POWER_TEMP_MAX`. | 2026-09-25 |
+| RTX 5080 Laptop (same host) | BzMiner 100.36 | 119.0 TH/s | `blackwell-sm120-compact` profile, 3 shares. Laptop firmware trimmed it to 140 W / 1985 MHz at 86 °C by minute four. First Blackwell run: the CUDA 12.8 base works. | 2026-09-25 |
+| RTX 5080 Laptop (same host) | krig 1.5.2 | no result | refused the pool as "not the official Kryptex PRL pool" on the global endpoint: this host's network intercepts TLS (the region probe read 1–4 ms to every region worldwide; real latency 500 ms). Network, not the card. | 2026-09-25 |
+
 The percentage printed just before the clock in krig's and SRBMiner's stats
 lines is **fan speed**, not GPU utilization (SRBMiner's table header labels
 that column Fan).
@@ -131,7 +135,8 @@ Environment variables:
 | `POWER_CAP_MIN_PCT` | `70`. At startup the entrypoint reads the card's current power limit and its default from `nvidia-smi`. Below this percentage the host has power-capped the card (a 3080 Ti at 176 W of 350 W hashed ~20 TH/s instead of ~116) and the replica is handed back to Salad for a different node. Salad excludes a rejected node from the group for a while, so keep this loose. |
 | `POWER_CAP_ACTION` | `reallocate` (call Salad's metadata service, wait to be stopped) or `warn` (log it and mine anyway). Off Salad the service doesn't exist and it always just warns. |
 | `POWER_CHECK_INTERVAL` | `60`. While a miner runs, re-read the power limit, draw, temperature and the driver's thermal-slowdown flags this often. Catches hosts whose tuning software trims the limit after the card warms up (a 3080 Ti went 350 → 308 → 242 → 220 W in two minutes under a 70 °C target), which the one-shot startup check on a cold card can't see. `0` disables. |
-| `POWER_CAP_GRACE` | `3`. Consecutive bad readings (limit below `POWER_CAP_MIN_PCT`, or thermal slowdown active) before the miner is stopped and the replica handed back. Three minutes by default, so a momentary dip costs nothing. |
+| `POWER_CAP_GRACE` | `3`. Consecutive bad readings (limit below `POWER_CAP_MIN_PCT`, thermal slowdown active, or temperature at/above `POWER_TEMP_MAX`) before the miner is stopped and the replica handed back. Three minutes by default, so a momentary dip costs nothing. |
+| `POWER_TEMP_MAX` | `88` °C. Temperature ceiling for the periodic check, a fallback for hosts whose driver reports the slowdown flags as `[N/A]`. Laptop GPUs report no power limit at all (`[N/A]`), so on them the thermal checks are the whole protection; NVIDIA laptop GPUs start pulling clocks at about 87 °C. `0` disables. |
 
 There is no `ALGO` variable: every miner spells pearlhash differently
 (`--coin pearl`, `--algorithm pearlhash`, `-a pearl`, `--algo pearlhash`), so
@@ -246,6 +251,7 @@ first verified build.
 
 | Version | Date | Notes |
 |---|---|---|
+| v1.4.1 | 2026-09-25 | Periodic host check works on laptops: when the driver reports no power limit (`[N/A]`, as every laptop GPU does) the thermal-slowdown flags are still evaluated, and a temperature ceiling `POWER_TEMP_MAX` (88 °C) covers drivers that report the flags as `[N/A]` too. Before this the check returned early on laptops and never looked. First 5080 Laptop bench: 122.6 TH/s SRBMiner at 150 W, 86 °C by minute five. |
 | v1.4.0 | 2026-09-24 | WildRig removed (OpenCL-only; no OpenCL on Salad NVIDIA nodes, verified four ways). Default `MINERS` is now `srb bz krig`, the measured Ampere ranking, so a group mines on the right miner without setting anything. Bench runs three miners, 15 min instead of 20. |
 | v1.3.0 | 2026-09-24 | Periodic host check while mining (`POWER_CHECK_INTERVAL`, `POWER_CAP_GRACE`): re-reads the power limit and thermal-slowdown flags every minute and reallocates after three bad readings. Catches temperature-target hosts that pass the cold startup check and then trim the limit under load. Bench does the same. |
 | v1.2.0 | 2026-09-24 | Base image `nvidia/cuda:12.8.1-base` instead of `-runtime`: download drops from 2.3 GB to ~0.4 GB, so reallocations come back faster. The `inspect-miner-deps` workflow showed no miner uses the CUDA toolkit (krig dlopens the driver's `libcuda.so.1`, BzMiner is static, SRBMiner links only libc, WildRig uses apt's OpenCL loader). Same miners, same entrypoint. |

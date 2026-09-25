@@ -145,18 +145,36 @@ host_check_tick() {
   sm="$(echo "$q"    | awk -F', *' '{print $5}')"
   hwt="$(echo "$q"   | awk -F', *' '{print $6}')"
   swt="$(echo "$q"   | awk -F', *' '{print $7}')"
+  # Laptops report the power limit as [N/A] (a 5080 Laptop GPU on Salad gave
+  # "[N/A], 80.00" while drawing 150 W). Then the percentage test is off, but
+  # the thermal checks below still apply - and laptops are exactly where they
+  # matter: that card climbed 75 -> 86 C in three minutes.
+  have_limit=1
   case "$limit$deflt" in
-    *[!0-9.]*|"") return 0 ;;   # driver doesn't report it; nothing to judge
+    *[!0-9.]*|"") have_limit=0 ;;
   esac
-  pct="$(awk -v l="$limit" -v d="$deflt" 'BEGIN { if (d > 0) printf "%d", l * 100 / d; else print 0 }')"
+  pct=-1
+  if [ "$have_limit" = 1 ]; then
+    pct="$(awk -v l="$limit" -v d="$deflt" 'BEGIN { if (d > 0) printf "%d", l * 100 / d; else print 0 }')"
+  fi
 
   bad=0; why=""
-  if [ "$pct" -lt "${POWER_CAP_MIN_PCT:-70}" ]; then
+  if [ "$have_limit" = 1 ] && [ "$pct" -lt "${POWER_CAP_MIN_PCT:-70}" ]; then
     bad=1; why="power limit ${limit}W of ${deflt}W (${pct}%)"
   fi
   if [ "$hwt" = Active ] || [ "$swt" = Active ]; then
     bad=1; why="${why:+$why, }thermal slowdown active (hw=${hwt} sw=${swt})"
   fi
+  # Temperature ceiling as a fallback for hosts whose driver reports the
+  # slowdown flags as [N/A]. NVIDIA laptop GPUs start pulling clocks at ~87 C.
+  #   POWER_TEMP_MAX   degrees C (default 88; 0 disables)
+  tmax="${POWER_TEMP_MAX:-88}"
+  case "$temp" in
+    ''|*[!0-9]*) ;;
+    *) if [ "$tmax" -gt 0 ] 2>/dev/null && [ "$temp" -ge "$tmax" ]; then
+         bad=1; why="${why:+$why, }GPU at ${temp}C (ceiling ${tmax})"
+       fi ;;
+  esac
 
   if [ "$bad" = 1 ]; then
     HOST_CHECK_BAD=$((HOST_CHECK_BAD + 1))
@@ -175,16 +193,18 @@ host_check_tick() {
       HOST_CHECK_DISABLED=1
     fi
   else
-    [ "$HOST_CHECK_BAD" -gt 0 ] && echo "=== host check: recovered - power limit ${limit}W of ${deflt}W (${pct}%) ==="
+    [ "$HOST_CHECK_BAD" -gt 0 ] && echo "=== host check: recovered - drawing ${draw:-?}W, ${temp:-?}C, SM ${sm:-?} MHz${have_limit:+, limit ${limit}W of ${deflt}W} ==="
     HOST_CHECK_BAD=0
     # Heartbeat only when the limit has moved by 5 points or more, so a
-    # steady host adds nothing to the Salad log.
-    d=$((pct - HOST_CHECK_LAST_PCT)); [ "$d" -lt 0 ] && d=$((0 - d))
-    if [ "$HOST_CHECK_LAST_PCT" -ge 0 ] && [ "$d" -ge 5 ]; then
-      echo "=== host check: power limit ${limit}W of ${deflt}W (${pct}%), drawing ${draw:-?}W, ${temp:-?}C, SM ${sm:-?} MHz ==="
+    # steady host adds nothing to the Salad log. (No limit reported: no heartbeat.)
+    if [ "$have_limit" = 1 ]; then
+      d=$((pct - HOST_CHECK_LAST_PCT)); [ "$d" -lt 0 ] && d=$((0 - d))
+      if [ "$HOST_CHECK_LAST_PCT" -ge 0 ] && [ "$d" -ge 5 ]; then
+        echo "=== host check: power limit ${limit}W of ${deflt}W (${pct}%), drawing ${draw:-?}W, ${temp:-?}C, SM ${sm:-?} MHz ==="
+      fi
+      HOST_CHECK_LAST_PCT="$pct"
     fi
   fi
-  HOST_CHECK_LAST_PCT="$pct"
 }
 
 # ---------------------------------------------------------------------------
