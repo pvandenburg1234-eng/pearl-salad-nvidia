@@ -21,9 +21,10 @@ MINER_ROOT="${MINER_ROOT:-/opt}"
 cleanup() {
   echo "=== SIGTERM received - stopping miner ==="
   pkill -TERM -f "$MINER_ROOT/" 2>/dev/null
-  sleep 2
-  pkill -KILL -f "$MINER_ROOT/" 2>/dev/null
+  # Post the log first: Salad's grace period after a stop can be short.
   ship_stop
+  sleep 1
+  pkill -KILL -f "$MINER_ROOT/" 2>/dev/null
   exit 0
 }
 
@@ -71,7 +72,7 @@ ship_start() {
   if [ "${LOG_SHIP:-1}" = 0 ]; then echo "=== log shipping: off (LOG_SHIP=0) ==="; return 0; fi
   [ -n "${AXIOM_TOKEN:-}" ] || return 0
   _fifo="${SHIP_LOG}.fifo"
-  rm -f "$_fifo"
+  rm -f "$_fifo" "$SHIP_LOG.pos"
   if ! mkfifo "$_fifo"; then echo "=== log shipping: mkfifo failed - off ==="; return 0; fi
   : > "$SHIP_LOG"
   # tee keeps the original stdout (Salad's log) and appends a copy to the
@@ -94,15 +95,48 @@ ship_stop() {
   SHIP_PID=""
 }
 
+# Post now instead of at the next tick, and wait (up to 5 s) until the
+# shipper reports everything written so far as posted. Used before a
+# reallocation request, after which Salad stops the container quickly.
+# $SHIP_LOG.pos holds the shipper's offset; it only drops (to 0) when the
+# file was emptied, which happens only once everything was sent.
+ship_flush() {
+  [ -n "$SHIP_PID" ] || return 0
+  _i=0
+  while [ ! -f "$SHIP_LOG.pos" ] && [ "$_i" -lt 25 ]; do sleep 0.2; _i=$((_i + 1)); done
+  [ -f "$SHIP_LOG.pos" ] || return 0
+  sleep 0.2   # let tee write the line(s) just echoed
+  _target=$(wc -c < "$SHIP_LOG" 2>/dev/null) || return 0
+  _last=$(cat "$SHIP_LOG.pos" 2>/dev/null || echo 0)
+  kill -USR1 "$SHIP_PID" 2>/dev/null || return 0
+  _i=0
+  while [ "$_i" -lt 25 ]; do
+    _pos=$(cat "$SHIP_LOG.pos" 2>/dev/null || echo 0)
+    if [ "$_pos" -ge "$_target" ] || [ "$_pos" -lt "$_last" ]; then return 0; fi
+    sleep 0.2; _i=$((_i + 1))
+    # Nudge again every second in case the signal was lost (an extra wake-up
+    # only means one more, possibly empty, post).
+    [ $((_i % 5)) = 0 ] && kill -USR1 "$SHIP_PID" 2>/dev/null
+  done
+}
+
 ship_loop() {
   trap 'SHIP_STOPPING=1' TERM
+  trap 'SHIP_NOW=1' USR1
   trap '' INT
-  SHIP_STOPPING=0; SHIP_OFF=0; SHIP_FAILS=0
+  SHIP_STOPPING=0; SHIP_NOW=0; SHIP_OFF=0; SHIP_FAILS=0
+  # The .pos file doubles as "USR1 handler installed": an USR1 before this
+  # point would kill the loop (default action), so ship_flush waits for it.
+  echo 0 > "$SHIP_LOG.pos"
   SHIP_URL="https://${AXIOM_HOST:-us-east-1.aws.edge.axiom.co}/v1/ingest/${AXIOM_DATASET:-salad-prl}"
   SHIP_LABELS="{\"container_group_name\":\"${SALAD_CONTAINER_GROUP_NAME:-}\",\"machine_id\":\"${SALAD_MACHINE_ID:-}\",\"instance_id\":\"${SALAD_INSTANCE_ID:-}\",\"organization_name\":\"${SALAD_ORGANIZATION_NAME:-}\",\"project_name\":\"${SALAD_PROJECT_NAME:-}\",\"image_version\":\"${IMAGE_VERSION:-unknown}\"}"
   while :; do
-    [ "$SHIP_STOPPING" = 1 ] || isleep "${SHIP_INTERVAL:-10}"
+    # A USR1 that lands during a post sets SHIP_NOW, so the flush still
+    # happens right after it instead of a tick later.
+    if [ "$SHIP_STOPPING" != 1 ] && [ "$SHIP_NOW" != 1 ]; then isleep "${SHIP_INTERVAL:-10}"; fi
+    SHIP_NOW=0
     ship_once
+    echo "$SHIP_OFF" > "$SHIP_LOG.pos"
     # One more pass on the way out in case a post was cut short.
     if [ "$SHIP_STOPPING" = 1 ]; then ship_once; break; fi
   done
@@ -191,12 +225,15 @@ check_wallet() {
 salad_reallocate() {
   reason="$1"
   echo "=== asking Salad to reallocate this replica: $reason ==="
+  # Salad stops the container within seconds of a 2xx; get the reason (and
+  # everything before it) posted first.
+  ship_flush
   code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -X POST \
     http://169.254.169.254/v1/reallocate \
     -H 'Content-Type: application/json' -H 'Metadata: true' \
     --data "{\"reason\":\"$reason\"}" 2>/dev/null)"
   case "$code" in
-    2*) echo "=== reallocation accepted (HTTP $code) - Salad will stop this container ==="; return 0 ;;
+    2*) echo "=== reallocation accepted (HTTP $code) - Salad will stop this container ==="; ship_flush; return 0 ;;
   esac
   echo "=== Salad IMDS not reachable (HTTP ${code:-none}) - not on Salad? carrying on ==="
   return 1
