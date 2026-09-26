@@ -16,6 +16,7 @@ set -u
 . "$(dirname "$0")/common.sh"
 
 trap cleanup TERM INT
+ship_start
 check_wallet
 
 MINERS="${MINERS:-krig srb bz wildrig}"

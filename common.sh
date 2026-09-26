@@ -23,6 +23,7 @@ cleanup() {
   pkill -TERM -f "$MINER_ROOT/" 2>/dev/null
   sleep 2
   pkill -KILL -f "$MINER_ROOT/" 2>/dev/null
+  ship_stop
   exit 0
 }
 
@@ -40,6 +41,127 @@ kill_miner() {
   pkill -KILL -f "$MINER_ROOT/$name/" 2>/dev/null
   kill -TERM "$pid" 2>/dev/null
   wait "$pid" 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# Log shipping: this container posts its own output to Axiom
+# ---------------------------------------------------------------------------
+# Salad's external-logging forwarder stopped delivering on 2026-09-25 while
+# the containers themselves had working internet, so the container ships its
+# own log. With AXIOM_TOKEN set, everything this script prints (its === lines
+# and the miner's output) still goes to stdout for Salad's portal, and is also
+# appended to $SHIP_LOG; a background loop posts the new lines every
+# SHIP_INTERVAL seconds in the record shape Salad's forwarder used
+# (@timestamp, log.message, resource.labels.*) plus via="container".
+# A line's time is when it was posted (<= SHIP_INTERVAL late), with a
+# per-line nanosecond step so the order within a post is kept.
+# Shipping never stops mining: a failed post is retried on the next tick, a
+# post Axiom rejects (4xx) is dropped, and past SHIP_MAX_BACKLOG unsent bytes
+# the backlog is dropped.
+#   LOG_SHIP          1 (default) | 0 = off even when AXIOM_TOKEN is set
+#   AXIOM_TOKEN       Axiom ingest token (a Salad secret env var); unset = off
+#   AXIOM_DATASET     default salad-prl
+#   AXIOM_HOST        default us-east-1.aws.edge.axiom.co (the edge host serves
+#                     /v1/ingest/<dataset>; api.axiom.co does not)
+#   SHIP_INTERVAL     seconds between posts (default 10)
+#   SHIP_MAX_BACKLOG  bytes (default 4000000)
+SHIP_LOG="${SHIP_LOG:-/tmp/ship.log}"
+SHIP_PID=""
+ship_start() {
+  if [ "${LOG_SHIP:-1}" = 0 ]; then echo "=== log shipping: off (LOG_SHIP=0) ==="; return 0; fi
+  [ -n "${AXIOM_TOKEN:-}" ] || return 0
+  _fifo="${SHIP_LOG}.fifo"
+  rm -f "$_fifo"
+  if ! mkfifo "$_fifo"; then echo "=== log shipping: mkfifo failed - off ==="; return 0; fi
+  : > "$SHIP_LOG"
+  # tee keeps the original stdout (Salad's log) and appends a copy to the
+  # file (-a, so truncating the file after a post really frees the space).
+  tee -a "$SHIP_LOG" < "$_fifo" &
+  exec > "$_fifo" 2>&1
+  rm -f "$_fifo"
+  ship_loop &
+  SHIP_PID=$!
+  trap ship_stop EXIT
+  echo "=== log shipping: on -> ${AXIOM_HOST:-us-east-1.aws.edge.axiom.co} dataset ${AXIOM_DATASET:-salad-prl} every ${SHIP_INTERVAL:-10}s (LOG_SHIP=0 turns it off) ==="
+}
+
+# Final post on the way out (SIGTERM or exit): at most ~5 s.
+ship_stop() {
+  [ -n "$SHIP_PID" ] || return 0
+  kill -TERM "$SHIP_PID" 2>/dev/null
+  _i=0
+  while [ "$_i" -lt 10 ] && kill -0 "$SHIP_PID" 2>/dev/null; do sleep 0.5; _i=$((_i + 1)); done
+  SHIP_PID=""
+}
+
+ship_loop() {
+  trap 'SHIP_STOPPING=1' TERM
+  trap '' INT
+  SHIP_STOPPING=0; SHIP_OFF=0; SHIP_FAILS=0
+  SHIP_URL="https://${AXIOM_HOST:-us-east-1.aws.edge.axiom.co}/v1/ingest/${AXIOM_DATASET:-salad-prl}"
+  SHIP_LABELS="{\"container_group_name\":\"${SALAD_CONTAINER_GROUP_NAME:-}\",\"machine_id\":\"${SALAD_MACHINE_ID:-}\",\"instance_id\":\"${SALAD_INSTANCE_ID:-}\",\"organization_name\":\"${SALAD_ORGANIZATION_NAME:-}\",\"project_name\":\"${SALAD_PROJECT_NAME:-}\",\"image_version\":\"${IMAGE_VERSION:-unknown}\"}"
+  while :; do
+    [ "$SHIP_STOPPING" = 1 ] || isleep "${SHIP_INTERVAL:-10}"
+    ship_once
+    # One more pass on the way out in case a post was cut short.
+    if [ "$SHIP_STOPPING" = 1 ]; then ship_once; break; fi
+  done
+}
+
+ship_once() {
+  _size=$(wc -c < "$SHIP_LOG" 2>/dev/null) || return 0
+  [ "$_size" -lt "$SHIP_OFF" ] && SHIP_OFF=0
+  _pend=$((_size - SHIP_OFF))
+  [ "$_pend" -gt 0 ] || return 0
+  if [ "$_pend" -gt "${SHIP_MAX_BACKLOG:-4000000}" ]; then
+    echo "=== log shipping: $_pend bytes unsent (Axiom unreachable?) - dropping them ==="
+    SHIP_OFF=$_size
+    return 0
+  fi
+  tail -c +$((SHIP_OFF + 1)) "$SHIP_LOG" | head -c 262144 > "$SHIP_LOG.chunk"
+  # Whole lines only; a partial last line waits for the next tick (unless the
+  # chunk is one giant line, which goes as is).
+  _n=$(tr -dc '\n' < "$SHIP_LOG.chunk" | wc -c)
+  if [ "$_n" -gt 0 ]; then head -n "$_n" "$SHIP_LOG.chunk" > "$SHIP_LOG.lines"
+  elif [ "$(wc -c < "$SHIP_LOG.chunk")" -ge 262144 ]; then cp "$SHIP_LOG.chunk" "$SHIP_LOG.lines"
+  else return 0; fi
+  _bytes=$(wc -c < "$SHIP_LOG.lines")
+  ship_json < "$SHIP_LOG.lines" > "$SHIP_LOG.json"
+  _code=$(curl -s -o "$SHIP_LOG.resp" -w '%{http_code}' --max-time 20 -X POST "$SHIP_URL" \
+    -H "Authorization: Bearer $AXIOM_TOKEN" -H 'Content-Type: application/json' \
+    --data-binary @"$SHIP_LOG.json" 2>/dev/null)
+  case "$_code" in
+    2*) SHIP_OFF=$((SHIP_OFF + _bytes))
+        if [ "$SHIP_FAILS" -gt 0 ]; then echo "=== log shipping: recovered after $SHIP_FAILS failed posts ==="; fi
+        SHIP_FAILS=0 ;;
+    4*) SHIP_OFF=$((SHIP_OFF + _bytes)); SHIP_FAILS=$((SHIP_FAILS + 1))
+        if [ $((SHIP_FAILS % 60)) = 1 ]; then echo "=== log shipping: Axiom rejected a post (HTTP $_code: $(head -c 200 "$SHIP_LOG.resp")) - dropped; check AXIOM_TOKEN / AXIOM_DATASET ==="; fi ;;
+    *)  SHIP_FAILS=$((SHIP_FAILS + 1))
+        if [ $((SHIP_FAILS % 60)) = 1 ]; then echo "=== log shipping: post failed (HTTP ${_code:-none}) - retrying ==="; fi ;;
+  esac
+  # Everything sent and the file is past 1 MB: empty it. (Lines tee appends
+  # between the size check and the truncation are lost; it is a microsecond.)
+  if [ "$SHIP_OFF" -ge 1000000 ] && [ "$(wc -c < "$SHIP_LOG")" -eq "$SHIP_OFF" ]; then
+    : > "$SHIP_LOG"; SHIP_OFF=0
+  fi
+}
+
+# stdin lines -> JSON array of Axiom events. Control characters other than
+# tab and ESC are removed, and bytes >= 0x80 too (one invalid UTF-8 byte
+# would make Axiom reject the whole post; miner output is ASCII anyway).
+ship_json() {
+  _now=$(date -u +%Y-%m-%dT%H:%M:%S.%3N)
+  # Escaping is done by GNU sed: awk implementations (mawk in the image,
+  # gawk elsewhere) disagree on backslashes in gsub replacements.
+  LC_ALL=C tr -d '\000-\010\013-\032\034-\037\200-\377' \
+    | LC_ALL=C sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' -e 's/\x1b/\\u001b/g' \
+    | LC_ALL=C awk -v now="$_now" -v labels="$SHIP_LABELS" '
+    BEGIN { split(now, p, "."); printf "[" }
+    {
+      t = p[1] "." p[2] sprintf("%06d", NR) "Z"
+      printf "%s{\"_time\":\"%s\",\"@timestamp\":\"%s\",\"log\":{\"message\":\"%s\"},\"resource\":{\"type\":\"container\",\"labels\":%s},\"via\":\"container\"}", (NR > 1 ? "," : ""), t, t, $0, labels
+    }
+    END { print "]" }'
 }
 
 # ---------------------------------------------------------------------------
