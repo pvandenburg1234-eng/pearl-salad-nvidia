@@ -69,10 +69,16 @@ The percentage printed just before the clock in krig's and SRBMiner's stats
 lines is **fan speed**, not GPU utilization (SRBMiner's table header labels
 that column Fan).
 
-Per-class picks so far (see the AMD sibling for RDNA4):
+Per-class picks so far (see the AMD sibling for RDNA4). Every bench run and
+sustained fleet number, including the 27 Sep runs below, is in
+**[BENCHMARKS.md](BENCHMARKS.md)**:
 
 | Salad GPU class | `MINERS=` | Why |
 |---|---|---|
+| RTX 5090 | `krig` | ~410 TH/s at 600 W and 0% devfee vs BzMiner 410.8 (402.6 after devfee) and SRBMiner 393.6, one full-power host (2026-09-27). Hosts vary: 262-412 TH/s across seven production 5090s; set `POWER_CAP_MIN_PCT=80`-`90`. |
+| RTX 5070 Ti | `krig` | ~159.5 vs SRBMiner 166.8 (163.5 after devfee) vs BzMiner 163.4 on a host capped to 250 W; within 3%, so the 0% devfee wins. |
+| RTX 4070 Ti SUPER | `srb` | 166.2 vs BzMiner 156.5 vs krig ~152.9 on a host whose limit was raised to 314 W. |
+| RTX 3090 | `srb` | 123.3 at 349 W vs BzMiner 116.5 vs krig ~97. |
 | RTX 3080 / 3080 Ti | `srb` | 113.8 vs BzMiner 110.5 vs krig 90.8 on an uncapped 3080, all three in one bench run; same order on two capped hosts. |
 | RTX 4070 (and likely other Ada) | `srb` | 107.6 vs BzMiner 107.7 (tie) vs krig 98.0 on one clean host. Either of the first two is fine. |
 | RTX 5080 Laptop | `srb` | 122–126 TH/s on two hosts (BzMiner 119–124, krig 117). Runs at 86 °C by design, ~150–160 W. At $0.08 Lowest that is ~2.0x, level with the 9070 XT on net dollars; the class had spare machines on the demand monitor. |
