@@ -33,6 +33,7 @@ each section. Update this file whenever a bench run finishes.
 | RX 9060 XT | `krig` | ~49-52 | bench + 7 hosts sustained |
 | RX 7900 XTX | `srb` | ~54 | one host |
 | RTX 5090 | `krig` | ~410 | bench + 6 hosts sustained |
+| RTX 5080 | `krig` (tie with bz) | ~221 | one host, full 360 W |
 | RTX 5070 Ti | `krig` (tie with srb) | ~160-163 | one host, power-capped to 83 % |
 | RTX 4070 Ti SUPER | `srb` | ~163 (166 reported) | one host, power limit raised to 110 % |
 | RTX 3090 | `srb` | ~121 (123 reported) | one host |
@@ -42,9 +43,9 @@ each section. Update this file whenever a bench run finishes.
 | RTX 5070 Ti Laptop | `srb` | ~88 | fleet |
 
 Rough rule so far: **krig** wins on RDNA4's smaller card (9060 XT) and on
-Blackwell desktop (5090, tie on 5070 Ti); **SRBMiner** wins on Ampere
-(3080/3090), Ada (4070 Ti SUPER) and the laptops; **BzMiner** wins on the
-RX 9070 XT. Not yet benched: RTX 4090, 4080, 5080 (desktop).
+every Blackwell desktop card (5090, and on the 0 % devfee tie-break 5080 and
+5070 Ti); **SRBMiner** wins on Ampere (3080/3090), Ada (4070 Ti SUPER) and the
+laptops; **BzMiner** wins on the RX 9070 XT. Not yet benched: RTX 4090, 4080.
 
 ## AMD (`pearl-salad`)
 
@@ -115,6 +116,19 @@ Of 15 hosts offered at Medium priority in one afternoon, 11 were rejected by the
 image's own checks (10 power caps between 66 and 88 % of the default limit,
 1 thermal throttle), each within 1-3 minutes of starting. Use
 `POWER_CAP_MIN_PCT` (80-90) on 5090 groups.
+
+### RTX 5080 (Blackwell, 16 GB)
+
+Bench, 2026-09-27, one host at its full 360 W limit (max SM clock 3090 MHz):
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| SRBMiner-MULTI | 214.5 | 210.2 | 4 (360 W, 66 °C, 2797 MHz) |
+| BzMiner 100.36 | 225.3 | 220.8 | 9 |
+| **krig-miner 1.5.2** | ~220.8 | **~220.8** | 4 (0 stale, 0 rejected) |
+
+krig and BzMiner are level after BzMiner's 2 % devfee, so the tie goes to
+krig. About 0.61 TH/s per watt. WhatToMine: 195.
 
 ### RTX 5070 Ti (Blackwell, 16 GB)
 
