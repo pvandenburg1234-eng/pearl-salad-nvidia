@@ -35,6 +35,7 @@ each section. Update this file whenever a bench run finishes.
 | RTX 5090 | `krig` | ~410 | bench + 6 hosts sustained |
 | RTX 5080 | `krig` (tie with bz) | ~221 | one host, full 360 W |
 | RTX 5070 Ti | `krig` (tie with srb) | ~160-163 | one host, power-capped to 83 % |
+| RTX 4080 | `srb` | ~191 (195 reported) | one host, full 320 W |
 | RTX 4070 Ti SUPER | `srb` | ~163 (166 reported) | one host, power limit raised to 110 % |
 | RTX 3090 | `srb` | ~121 (123 reported) | one host |
 | RTX 3080 / 3080 Ti | `srb` | ~112 (114 uncapped) | bench, 4 hosts |
@@ -44,8 +45,8 @@ each section. Update this file whenever a bench run finishes.
 
 Rough rule so far: **krig** wins on RDNA4's smaller card (9060 XT) and on
 every Blackwell desktop card (5090, and on the 0 % devfee tie-break 5080 and
-5070 Ti); **SRBMiner** wins on Ampere (3080/3090), Ada (4070 Ti SUPER) and the
-laptops; **BzMiner** wins on the RX 9070 XT. Not yet benched: RTX 4090, 4080.
+5070 Ti); **SRBMiner** wins on Ampere (3080/3090), Ada (4080, 4070 Ti SUPER)
+and the laptops; **BzMiner** wins on the RX 9070 XT. Not yet benched: RTX 4090.
 
 ## AMD (`pearl-salad`)
 
@@ -142,6 +143,19 @@ Bench, 2026-09-27, one host capped by its owner to 250 of 300 W (83 %):
 
 krig is within 3 % of SRBMiner's effective rate, so the tie goes to its 0 %
 devfee. 159 TH/s at 250 W, 62 °C = 0.64 TH/s per watt. WhatToMine: 165.
+
+### RTX 4080 (Ada, 16 GB)
+
+Bench, 2026-09-27, one host at its full 320 W limit (max SM clock 3105 MHz):
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **SRBMiner-MULTI** | **194.6** | **190.7** | 4 |
+| BzMiner 100.36 | 186.0 | 182.3 | 3 |
+| krig-miner 1.5.2 | ~183.8 | ~183.8 | 10 (0 stale, 0 rejected) |
+
+krig is 3.6 % behind SRBMiner's effective rate, just outside the tie margin.
+WhatToMine: 168; measured about 16 % higher.
 
 ### RTX 4070 Ti SUPER (Ada, 16 GB)
 
