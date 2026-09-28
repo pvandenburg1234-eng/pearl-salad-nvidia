@@ -64,6 +64,8 @@ please update the list above with the card and hashrate.
 | RTX 5080 Laptop (2nd host, bench) | SRBMiner 3.6.9 | 126.5 TH/s at 158 W | opened at 175 W / 2235 MHz / 85 °C, then the laptop's firmware settled it at ~158 W / 2115 MHz / 86 °C and held there for 15 min with a flat hashrate. **86 °C is this class's steady state, not a fault.** Europe host, 47 ms. | 2026-09-25 |
 | RTX 5080 Laptop (2nd host) | BzMiner 100.36 | 124.0 TH/s at 156–162 W | 86 °C throughout, 1 share in 5 min. | 2026-09-25 |
 | RTX 5080 Laptop (2nd host) | krig 1.5.2 | 117.1 TH/s at 155 W | 4 shares; 93% of SRBMiner, 6% behind after devfee. Confirms the first host's krig failure was its network, not Blackwell. | 2026-09-25 |
+| RTX 3060 Ti (production, Low tier, 2 hosts) | SRBMiner 3.6.9 | **65.0 and 63.3 TH/s** at 200 W | both at their full 200 W limit, 0.32 TH/W, steady for 2 h+. At $0.047/h (Low) it returns ~1.8x its cost, the best per dollar in the fleet; but only 2 of 8 cheap-Ampere hosts passed the health checks (the rest power-capped to 60–65 % or throttling at 88–92 °C). Not benched against the other miners (SRBMiner won every Ampere bench). | 2026-09-28 |
+| RTX 3080 Ti Laptop (production, Low tier) | SRBMiner 3.6.9 | 57 TH/s for 18 min; another host 4–10 TH/s | both reached the 88 °C ceiling and reallocated themselves; the slow one held 88 °C with the GPU clock at 230–450 MHz (poor cooling). | 2026-09-28 |
 
 The percentage printed just before the clock in krig's and SRBMiner's stats
 lines is **fan speed**, not GPU utilization (SRBMiner's table header labels
