@@ -40,6 +40,7 @@ each section. Update this file whenever a bench run finishes.
 | RTX 3090 | `srb` | ~121 (123 reported) | one host |
 | RTX 3080 / 3080 Ti | `srb` | ~112 (114 uncapped) | bench, 4 hosts |
 | RTX 4070 | `srb` or `bz` | ~105 | one host |
+| RTX 3060 Ti | `srb` | ~64 at 200 W | 2 hosts, production (not benched against the others) |
 | RTX 5080 Laptop | `srb` | ~124 on good hosts | bench, 2 hosts + fleet |
 | RTX 5070 Ti Laptop | `srb` | ~88 | fleet |
 
@@ -193,6 +194,20 @@ the Kryptex pool over TLS and reallocated itself before mining.
 
 Every early Ampere host was power- or temperature-limited; this is why the
 NVIDIA image rejects hosts below `POWER_CAP_MIN_PCT` of their default limit.
+
+### RTX 3060 Ti (Ampere, 8 GB)
+
+Production, 2026-09-28, SRBMiner (`MINERS="srb krig bz"`, not benched against
+the others: SRBMiner won every Ampere bench), first 10 minutes of mining:
+
+| Host | Power | SRBMiner reported TH/s |
+|---|---|---|
+| 0c77791a | 200 W of 200 W default | 65.0 |
+| 045d95d4 | 199 W | 63.3 |
+
+~64 TH/s at 200 W = 0.32 TH/s per watt (~62.7 effective after the 2 % devfee).
+At $0.03/h (Lowest) or $0.047/h (Low) it returns about twice its cost at 22.9
+PRL per PH/s-day and $1.56 - the best return per dollar in the fleet.
 
 ### RTX 4070 (Ada, 12 GB)
 
