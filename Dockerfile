@@ -132,9 +132,13 @@ RUN wget -qO /tmp/krig.tgz \
  && ls -la /opt/krig
 
 # --- 2. SRBMiner-MULTI ------------------------------------------------------
-ARG SRB_VERSION=3.6.9
+# 3.7.0 (28 Sep): +5-6 % pearlhash on an RTX 5080 Laptop vs 3.6.9, same power.
+# SHA-256 from the GitHub release asset digest.
+ARG SRB_VERSION=3.7.0
+ARG SRB_SHA256=92986002a213f23fff69aebe5f9a582f15d1fe51cecef4a30b3cd82fca6fc716
 RUN wget -qO /tmp/srb.tgz \
       https://github.com/doktor83/SRBMiner-Multi/releases/download/${SRB_VERSION}/SRBMiner-Multi-$(echo ${SRB_VERSION} | tr . -)-Linux.tar.gz \
+ && echo "${SRB_SHA256}  /tmp/srb.tgz" | sha256sum -c - \
  && mkdir -p /tmp/srb && tar xzf /tmp/srb.tgz -C /tmp/srb \
  && bin="$(find /tmp/srb -type f -name SRBMiner-MULTI | head -1)" \
  && [ -n "$bin" ] && mv "$(dirname "$bin")" /opt/srb \
