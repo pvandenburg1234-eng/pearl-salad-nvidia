@@ -79,7 +79,7 @@ sustained fleet number, including the 27 Sep runs below, is in
 |---|---|---|
 | RTX 5090 | `krig` | ~410 TH/s at 600 W and 0% devfee vs BzMiner 410.8 (402.6 after devfee) and SRBMiner 393.6, one full-power host (2026-09-27). Hosts vary: 262-412 TH/s across seven production 5090s; set `POWER_CAP_MIN_PCT=80`-`90`. |
 | RTX 5080 | `krig` | ~220.8 at 360 W vs BzMiner 225.3 (220.8 after devfee, a tie) vs SRBMiner 214.5, one full-power host (2026-09-27). |
-| RTX 5070 Ti | `krig` | ~159.5 vs SRBMiner 166.8 (163.5 after devfee) vs BzMiner 163.4 on a host capped to 250 W; within 3%, so the 0% devfee wins. |
+| RTX 5070 Ti | `srb` | ~172 effective (175.6 reported) vs BzMiner 100.40 168.7 vs krig 167.7 at the full 300 W (30 Sep); on a 250 W-capped host SRBMiner also led (163.5 vs 160.1 vs 159.5). The old 3% tie rule had picked krig. |
 | RTX 4080 | `srb` | 194.6 at 320 W vs BzMiner 186.0 vs krig ~183.8 (2026-09-27). |
 | RTX 4070 Ti SUPER | `srb` | 166.2 vs BzMiner 156.5 vs krig ~152.9 on a host whose limit was raised to 314 W. |
 | RTX 3090 | `srb` | 123.3 at 349 W vs BzMiner 116.5 vs krig ~97. |

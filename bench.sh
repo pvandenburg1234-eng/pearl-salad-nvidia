@@ -16,7 +16,8 @@
 #
 # Env: WALLET (required), POOL / POOL_AUTO as production, MINERS (order to
 # test; default all four), BENCH_SECONDS (300), BENCH_SKIP_SAMPLES (2 - warm-up
-# samples ignored), BENCH_THEN, BENCH_HOLD (3600), *_EXTRA_ARGS as production.
+# samples ignored), BENCH_THEN, BENCH_HOLD (3600), BENCH_TIE_PCT (0 - the
+# highest effective rate wins), *_EXTRA_ARGS as production.
 
 set -u
 . "$(dirname "$0")/common.sh"
@@ -110,13 +111,15 @@ print_table() {
   echo "----------------------------------------------------------------------------------"
 }
 
-# Winner: highest effective rate. A miner within 3% of the top is a tie, and
-# ties go to the lower devfee (pool-side rate is what pays, and reported
-# rates are only accurate to a few percent).
-best="$(awk '
+# Winner: highest effective rate - the devfee is already taken off, so it is
+# not counted a second time. (Until 30 Sep a miner within 3% of the top was a
+# "tie" won by the lowest devfee; on a full-power RTX 5070 Ti that picked krig
+# at 167.7 over SRBMiner at 172.1 effective TH/s.) BENCH_TIE_PCT (default 0)
+# brings the tie margin back if wanted; ties go to the lower devfee.
+best="$(BENCH_TIE_PCT="${BENCH_TIE_PCT:-0}" awk '
   $2 == "ok" && $7 + 0 > 0 { eff[$1] = $7 + 0; fee[$1] = $6 + 0; if ($7 + 0 > top) top = $7 + 0 }
   END {
-    for (n in eff) if (eff[n] >= top * 0.97) {
+    for (n in eff) if (eff[n] >= top * (1 - ENVIRON["BENCH_TIE_PCT"] / 100)) {
       if (best == "" || fee[n] < fee[best] || (fee[n] == fee[best] && eff[n] > eff[best])) best = n
     }
     print best

@@ -13,9 +13,10 @@ each section. Update this file whenever a bench run finishes.
 - **Effective TH/s** = reported x (100 - devfee) / 100, the part that pays you.
   Devfees as applied by `bench.sh`: krig 0 %, SRBMiner-MULTI 2 %, BzMiner 2 %,
   WildRig 0 %.
-- **Winner rule:** highest effective rate; a miner within 3 % of the top is a
-  tie, and ties go to the lower devfee (reported rates are only good to a few
-  percent, and pool-side hashrate is what pays).
+- **Winner rule (since 30 Sep):** highest effective rate wins; the devfee is
+  already taken off, so it is not counted twice. Before 30 Sep a miner within
+  3 % of the top was a tie won by the lowest devfee, which picked krig over a
+  faster SRBMiner on the RTX 5070 Ti (`BENCH_TIE_PCT` restores a margin).
 - **Fleet (sustained)** figures are the median of each device's once-a-minute
   readings over days of production mining, then the median across devices.
 - Share counts in a 5-minute window are mostly luck (a 50 TH/s card finds about
@@ -34,7 +35,7 @@ each section. Update this file whenever a bench run finishes.
 | RX 7900 XTX | `srb` | ~54 | one host |
 | RTX 5090 | `krig` | ~410 | bench + 6 hosts sustained |
 | RTX 5080 | `krig` (tie with bz) | ~221 | one host, full 360 W |
-| RTX 5070 Ti | `krig` (tie with srb) | ~160-163 | one host, power-capped to 83 % |
+| RTX 5070 Ti | `srb` | ~172 | two hosts; full 300 W on 30 Sep (krig 167.7, bz 100.40 168.7) |
 | RTX 4080 | `srb` | ~191 (195 reported) | one host, full 320 W |
 | RTX 4070 Ti SUPER | `srb` | ~163 (166 reported) | one host, power limit raised to 110 % |
 | RTX 3090 | `srb` | ~121 (123 reported) | one host |
@@ -142,8 +143,23 @@ Bench, 2026-09-27, one host capped by its owner to 250 of 300 W (83 %):
 | BzMiner 100.36 | 163.4 | 160.1 | 3 |
 | **krig-miner 1.5.2** | ~159.5 | **~159.5** | 3 |
 
-krig is within 3 % of SRBMiner's effective rate, so the tie goes to its 0 %
-devfee. 159 TH/s at 250 W, 62 °C = 0.64 TH/s per watt. WhatToMine: 165.
+Under the old 3 % tie rule krig won on its 0 % devfee. 159 TH/s at 250 W,
+62 °C = 0.64 TH/s per watt. WhatToMine: 165.
+
+Bench, 2026-09-30, host c146f07c at its full 300 W (76 °C), High tier,
+`pearl-salad-nvidia-bench:v1.6.3`:
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **SRBMiner-MULTI 3.7.0** | ~175.6 | **~172.1** | 5 (1 stale) |
+| BzMiner 100.40 | 172.1 | 168.7 | 8 |
+| krig-miner 1.5.2 | 167.7 | 167.7 | 8 |
+
+SRBMiner is 2.6 % ahead of krig after its devfee - the old tie rule still
+picked krig, which is why the rule changed. BzMiner 100.40's "big NVIDIA
+optimizations" do not show on this card (+0.6 % over krig, as 100.36).
+The bench's own summary table was lost to the bench-image log-shipping bug;
+SRBMiner's figure is from its logged readings (175.5-175.8 TH/s).
 
 ### RTX 4080 (Ada, 16 GB)
 
