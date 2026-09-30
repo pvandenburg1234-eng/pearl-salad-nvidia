@@ -42,6 +42,7 @@ each section. Update this file whenever a bench run finishes.
 | RTX 4070 Ti SUPER | `srb` | ~163 (166 reported) | one host, power limit raised to 110 % |
 | RTX 4070 Ti | `srb` | ~158 (161 reported) | one host, full 285 W (30 Sep; krig 148.9, bz 147.2) |
 | RTX 4060 Ti | `srb` | ~85 (87 reported) | one host, full 165 W (30 Sep; krig 80.7, bz 78.7) |
+| RTX 3090 Ti | `srb` | ~152 (155 reported) | one host, full 480 W (30 Sep; bz 146.1, krig 122.5) |
 | RTX 3090 | `srb` | ~121 (123 reported) | one host |
 | RTX 3080 / 3080 Ti | `srb` | ~112 (114 uncapped) | bench, 4 hosts |
 | RTX 4070 | `srb` or `bz` | ~105 | one host |
@@ -247,6 +248,23 @@ All three within 2 %; SRBMiner narrowly ahead. 0.51 TH/s per watt. At Lowest
 ($0.07/h) ~+$0.85/day at PRL $1.33 and 20.5 PRL per PH/s-day. krig's result
 line was lost to the bench-image log-shipping bug; its figure is from its
 steady readings.
+
+### RTX 3090 Ti (Ampere, 24 GB)
+
+Bench, 2026-09-30, host 956bb2cc at its full 480 W (79 °C, 1,830 MHz), High
+tier, `pearl-salad-nvidia-bench:v1.6.5`:
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **SRBMiner-MULTI 3.7.0** | 155.3 | **152.2** | 5 |
+| BzMiner 100.40 | 149.1 | 146.1 | 1 |
+| krig-miner 1.5.2 | ~122.5 | ~122.5 | 4 |
+
+SRBMiner wins, as on every Ampere card; krig is 20 % behind. Only 0.33 TH/s
+per watt (fine on Salad, where power is the host's). At Lowest ($0.10/h)
+~+$1.75/day at PRL $1.33 and 20.5 PRL per PH/s-day. krig's result line was
+lost to the bench-image log-shipping bug; its figure is from its steady
+readings.
 
 ### RTX 4080 (Ada, 16 GB)
 
