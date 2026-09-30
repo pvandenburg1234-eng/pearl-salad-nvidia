@@ -35,6 +35,7 @@ each section. Update this file whenever a bench run finishes.
 | RX 7900 XTX | `srb` | ~54 | one host |
 | RTX 5090 | `krig` | ~410 | bench + 6 hosts sustained |
 | RTX 5080 | `krig` (tie with bz) | ~221 | one host, full 360 W |
+| RTX 4090 | `srb` | ~267 at a 70 % cap (315 W) | one host (30 Sep; bz 263.3, krig ~251); full power not yet seen |
 | RTX 5070 Ti | `srb` | ~172 | two hosts; full 300 W on 30 Sep (krig 167.7, bz 100.40 168.7) |
 | RTX 5070 | `bz` (krig within 0.6 %) | ~128 | one host, full 250 W (30 Sep) |
 | RTX 5060 Ti | `srb` (bz, krig within 2 %) | ~94 | one host, full 180 W (30 Sep) |
@@ -54,7 +55,7 @@ each section. Update this file whenever a bench run finishes.
 Rough rule so far: **krig** wins on RDNA4's smaller card (9060 XT) and on
 every Blackwell desktop card (5090, and on the 0 % devfee tie-break 5080 and
 5070 Ti); **SRBMiner** wins on Ampere (3080/3090), Ada (4080, 4070 Ti SUPER)
-and the laptops; **BzMiner** wins on the RX 9070 XT. Not yet benched: RTX 4090.
+and the laptops; **BzMiner** wins on the RX 9070 XT. RTX 4090 benched 30 Sep on a 70 %-capped host.
 
 ## AMD (`pearl-salad`)
 
@@ -265,6 +266,23 @@ per watt (fine on Salad, where power is the host's). At Lowest ($0.10/h)
 ~+$1.75/day at PRL $1.33 and 20.5 PRL per PH/s-day. krig's result line was
 lost to the bench-image log-shipping bug; its figure is from its steady
 readings.
+
+### RTX 4090 (Ada, 24 GB)
+
+Bench, 2026-09-30, host f7734605 **capped by its owner to 315 of 450 W
+(70 %)** (59 °C, 2,160 MHz), High tier, `pearl-salad-nvidia-bench:v1.6.5`:
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **SRBMiner-MULTI 3.7.0** | 272.1 | **266.6** | 13 |
+| BzMiner 100.40 | 268.7 | 263.3 | 10 |
+| krig-miner 1.5.2 | ~251 | ~251 | 7 |
+
+SRBMiner wins (+1.3 % over BzMiner, +6 % over krig). 0.86 TH/s per watt at
+the cap; a full-power host should do more (WhatToMine: 310). Even capped, at
+Lowest ($0.16/h) that is ~+$3.40/day at PRL $1.33 and 20.5 PRL per PH/s-day -
+twice a 9070 XT per slot. krig's result line was lost to the bench-image
+log-shipping bug; its figure is from its steady readings.
 
 ### RTX 4080 (Ada, 16 GB)
 
