@@ -382,6 +382,47 @@ host_check_tick() {
 }
 
 # ---------------------------------------------------------------------------
+# GPU probes with a deadline. On a host whose GPU driver is stuck, clinfo /
+# rocminfo / nvidia-smi can block forever inside the driver: 30 Sep a 9070 XT
+# sat at "OpenCL platforms (clinfo)" for 1 h 50 min, "running" and billed to
+# Salad, mining nothing. A process stuck in the driver can ignore even
+# SIGKILL, so the probe runs in the background and is abandoned (never waited
+# for) when it misses the deadline.
+#   PROBE_TIMEOUT   seconds per probe (default 60)
+# run_probe CMD... - sets PROBE_OUT; returns CMD's exit code, or 124 on timeout.
+# ---------------------------------------------------------------------------
+run_probe() {
+  _pt="${PROBE_TIMEOUT:-60}"
+  _po="/tmp/probe.$$"
+  rm -f "$_po" "$_po.rc"
+  ( "$@" > "$_po" 2>&1; echo "$?" > "$_po.rc" ) &
+  _pp=$!
+  _pi=0
+  while [ ! -s "$_po.rc" ] && [ "$_pi" -lt "$_pt" ]; do sleep 1; _pi=$((_pi + 1)); done
+  PROBE_OUT="$(cat "$_po" 2>/dev/null)"
+  if [ -s "$_po.rc" ]; then
+    _prc="$(cat "$_po.rc")"
+    rm -f "$_po" "$_po.rc"
+    return "$_prc"
+  fi
+  kill -9 "$_pp" 2>/dev/null
+  rm -f "$_po" "$_po.rc"
+  return 124
+}
+
+# A GPU probe that never answers means the host's driver is stuck: ask Salad
+# for another node instead of sitting here billed and idle.
+gpu_probe_hung() {
+  echo "=== GPU CHECK HUNG: $1 gave no answer in ${PROBE_TIMEOUT:-60}s - the host's GPU driver is stuck ==="
+  if salad_reallocate "GPU driver hung: $1 no answer in ${PROBE_TIMEOUT:-60}s"; then
+    isleep 180
+    echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+    exit 1
+  fi
+  echo "=== carrying on (IMDS unavailable); the miner will probably fail on this host ==="
+}
+
+# ---------------------------------------------------------------------------
 # GPU readiness check. Sets GPU_DESC (gfx target on AMD, card name on NVIDIA).
 # ---------------------------------------------------------------------------
 gpu_check() {
@@ -390,8 +431,13 @@ gpu_check() {
     echo "=== GPU readiness check (nvidia-smi) ==="
     echo "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-<unset>}  NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-<unset>}"
     if command -v nvidia-smi >/dev/null 2>&1; then
-      if nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader 2>&1; then
-        GPU_DESC="$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
+      run_probe nvidia-smi --query-gpu=name,driver_version,memory.total --format=csv,noheader
+      _rc=$?
+      echo "$PROBE_OUT"
+      if [ "$_rc" -eq 124 ]; then
+        gpu_probe_hung nvidia-smi
+      elif [ "$_rc" -eq 0 ]; then
+        GPU_DESC="$(echo "$PROBE_OUT" | head -1 | awk -F', *' '{print $1}')"
         nvidia_power_check
       else
         echo "nvidia-smi failed - the host driver was not injected. Is this an NVIDIA GPU class?"
@@ -405,8 +451,11 @@ gpu_check() {
     echo "=== GPU readiness check (rocminfo) ==="
     echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-<unset>}"
     if command -v rocminfo >/dev/null 2>&1; then
-      ROCMINFO="$(rocminfo 2>&1)"
+      run_probe rocminfo
+      _rc=$?
+      ROCMINFO="$PROBE_OUT"
       echo "$ROCMINFO" | grep -E 'Name:|Marketing Name|gfx|HSA_STATUS' | head -20
+      [ "$_rc" -eq 124 ] && gpu_probe_hung rocminfo
       GPU_DESC="$(echo "$ROCMINFO" | grep -oE 'gfx[0-9a-f]+' | head -1)"
     else
       echo "rocminfo not found in image (unexpected)"
@@ -414,7 +463,11 @@ gpu_check() {
     echo "=== GPU arch: ${GPU_DESC:-unknown} ==="
     echo "=== OpenCL platforms (clinfo) ==="
   fi
-  clinfo -l 2>&1 | head -20 || true
+  run_probe clinfo -l
+  _rc=$?
+  echo "$PROBE_OUT" | head -20
+  [ "$_rc" -eq 124 ] && gpu_probe_hung "clinfo"
+  return 0
 }
 
 # ---------------------------------------------------------------------------
