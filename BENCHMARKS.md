@@ -51,7 +51,7 @@ each section. Update this file whenever a bench run finishes.
 | RTX 5080 Laptop | `srb` | ~124 on good hosts | bench, 2 hosts + fleet |
 | RTX 4090 Laptop | `srb` | ~141 at 175 W | one host (30 Sep; krig 127.1, bz 126.2) |
 | RTX 4080 Laptop | `srb` | ~125 at 175 W | one host (30 Sep; bz 115.2, krig 115.1) |
-| RTX 5070 Ti Laptop | `srb` | ~88 | fleet |
+| RTX 5070 Ti Laptop | `bz` | ~91 at ~108 W | one host bench (30 Sep; krig ~89.5, srb 87.5); fleet srb ~88 |
 
 Rough rule so far: **krig** wins on RDNA4's smaller card (9060 XT) and on
 every Blackwell desktop card (5090, and on the 0 % devfee tie-break 5080 and
@@ -300,6 +300,23 @@ SRBMiner wins by 8.7 % over krig after its devfee. 0.73 TH/s per watt. At
 Lowest ($0.065/h) ~+$1.85/day at PRL $1.33 and 20.5 PRL per PH/s-day. krig's
 result line was lost to the bench-image log-shipping bug; its figure is from
 its steady readings.
+
+### RTX 5070 Ti Laptop (Blackwell, 12 GB)
+
+Bench, 2026-09-30, host 34bf53f3 at ~108 W (74 °C, ~2,140 MHz; the driver
+reports no power limit), High tier, `pearl-salad-nvidia-bench:v1.6.5`:
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **BzMiner 100.40** | 93.2 | **91.3** | 5 |
+| krig-miner 1.5.2 | ~89.5 | ~89.5 | 1 |
+| SRBMiner-MULTI 3.7.0 | 89.3 | 87.5 | 1 |
+
+BzMiner wins by 2 % over krig and 4.3 % over SRBMiner after devfees - with the
+RTX 5070, the second mid-range Blackwell card where SRBMiner does not win.
+0.82 TH/s per watt. The fleet had run this class on SRBMiner (~88). krig's
+result line was lost to the bench-image log-shipping bug; its figure is from
+its steady readings (88-90 TH/s).
 
 ### RTX 4080 (Ada, 16 GB)
 
