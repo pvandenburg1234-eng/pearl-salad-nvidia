@@ -37,6 +37,7 @@ each section. Update this file whenever a bench run finishes.
 | RTX 5080 | `krig` (tie with bz) | ~221 | one host, full 360 W |
 | RTX 5070 Ti | `srb` | ~172 | two hosts; full 300 W on 30 Sep (krig 167.7, bz 100.40 168.7) |
 | RTX 5070 | `bz` (krig within 0.6 %) | ~128 | one host, full 250 W (30 Sep) |
+| RTX 5060 Ti | `srb` (bz, krig within 2 %) | ~94 | one host, full 180 W (30 Sep) |
 | RTX 4080 | `srb` | ~191 (195 reported) | one host, full 320 W |
 | RTX 4070 Ti SUPER | `srb` | ~163 (166 reported) | one host, power limit raised to 110 % |
 | RTX 4070 Ti | `srb` | ~158 (161 reported) | one host, full 285 W (30 Sep; krig 148.9, bz 147.2) |
@@ -230,6 +231,22 @@ SRBMiner wins by 5.5 % over krig after its devfee. 0.53 TH/s per watt. At
 Lowest ($0.08/h) only ~+$0.40/day at PRL $1.33 and 20.5 PRL per PH/s-day -
 marginal. krig's result line was lost to the bench-image log-shipping bug;
 its figure is from its steady readings.
+
+### RTX 5060 Ti (Blackwell, 16 GB)
+
+Bench, 2026-09-30, host 45346afd at its full 180 W (73 °C, 2,692 MHz), High
+tier, `pearl-salad-nvidia-bench:v1.6.5`:
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **SRBMiner-MULTI 3.7.0** | 95.6 | **93.6** | 0 (2 later while mining) |
+| BzMiner 100.40 | 94.4 | 92.5 | 2 |
+| krig-miner 1.5.2 | ~91.8 | ~91.8 | 1 |
+
+All three within 2 %; SRBMiner narrowly ahead. 0.51 TH/s per watt. At Lowest
+($0.07/h) ~+$0.85/day at PRL $1.33 and 20.5 PRL per PH/s-day. krig's result
+line was lost to the bench-image log-shipping bug; its figure is from its
+steady readings.
 
 ### RTX 4080 (Ada, 16 GB)
 
