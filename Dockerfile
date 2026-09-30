@@ -146,9 +146,13 @@ RUN wget -qO /tmp/srb.tgz \
  && ls -la /opt/srb
 
 # --- 3. BzMiner --------------------------------------------------------------
-ARG BZ_VERSION=100.36
+# 100.40 (26 Sep): "Big Nvidia & AMD pearl optimizations". SHA-256 from the
+# GitHub release asset digest.
+ARG BZ_VERSION=100.40
+ARG BZ_SHA256=ce819865c7fc114b4c967bb0878bf8adaa5c09489348b89f5093813bfef49c6b
 RUN wget -qO /tmp/bz.tgz \
       https://github.com/bzminer/bzminer/releases/download/v${BZ_VERSION}/bzminer_v${BZ_VERSION}_linux.tar.gz \
+ && echo "${BZ_SHA256}  /tmp/bz.tgz" | sha256sum -c - \
  && mkdir -p /tmp/bz && tar xzf /tmp/bz.tgz -C /tmp/bz \
  && bin="$(find /tmp/bz -type f -name bzminer | head -1)" \
  && [ -n "$bin" ] && mv "$(dirname "$bin")" /opt/bz \
