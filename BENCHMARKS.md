@@ -50,6 +50,7 @@ each section. Update this file whenever a bench run finishes.
 | RTX 3060 Ti | `srb` | ~64 at 200 W | 2 hosts, production (not benched against the others) |
 | RTX 5080 Laptop | `srb` | ~124 on good hosts | bench, 2 hosts + fleet |
 | RTX 4090 Laptop | `srb` | ~141 at 175 W | one host (30 Sep; krig 127.1, bz 126.2) |
+| RTX 4080 Laptop | `srb` | ~125 at 175 W | one host (30 Sep; bz 115.2, krig 115.1) |
 | RTX 5070 Ti Laptop | `srb` | ~88 | fleet |
 
 Rough rule so far: **krig** wins on RDNA4's smaller card (9060 XT) and on
@@ -283,6 +284,22 @@ the cap; a full-power host should do more (WhatToMine: 310). Even capped, at
 Lowest ($0.16/h) that is ~+$3.40/day at PRL $1.33 and 20.5 PRL per PH/s-day -
 twice a 9070 XT per slot. krig's result line was lost to the bench-image
 log-shipping bug; its figure is from its steady readings.
+
+### RTX 4080 Laptop (Ada, 12 GB)
+
+Bench, 2026-09-30, host 26bf444c at ~175 W (81 °C, ~2,235 MHz; the driver
+reports no power limit), High tier, `pearl-salad-nvidia-bench:v1.6.5`:
+
+| Miner | Reported TH/s | Effective TH/s | Shares |
+|---|---|---|---|
+| **SRBMiner-MULTI 3.7.0** | 127.6 | **125.1** | 4 |
+| BzMiner 100.40 | 117.5 | 115.2 | 6 |
+| krig-miner 1.5.2 | ~115.1 | ~115.1 | 3 |
+
+SRBMiner wins by 8.7 % over krig after its devfee. 0.73 TH/s per watt. At
+Lowest ($0.065/h) ~+$1.85/day at PRL $1.33 and 20.5 PRL per PH/s-day. krig's
+result line was lost to the bench-image log-shipping bug; its figure is from
+its steady readings.
 
 ### RTX 4080 (Ada, 16 GB)
 
