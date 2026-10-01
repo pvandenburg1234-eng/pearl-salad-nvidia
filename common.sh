@@ -461,6 +461,19 @@ gpu_check() {
       echo "rocminfo not found in image (unexpected)"
     fi
     echo "=== GPU arch: ${GPU_DESC:-unknown} ==="
+    # No AMD GPU visible: Salad gave this AMD slot the wrong card. 30 Sep a host
+    # whose container saw only an RTX 4060 Ti kept landing in our RX 9070 XT
+    # slots (~68 TH/s at 9070 XT prices). Ask for another node.
+    #   NO_GPU_ACTION   reallocate (default) | warn
+    if [ -z "$GPU_DESC" ] && [ "${NO_GPU_ACTION:-reallocate}" = reallocate ]; then
+      echo "=== NO AMD GPU VISIBLE in an AMD slot - wrong card for this group ==="
+      if salad_reallocate "no AMD GPU visible to rocminfo (wrong GPU in an AMD slot)"; then
+        isleep 180
+        echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+        exit 1
+      fi
+      echo "=== carrying on (IMDS unavailable) ==="
+    fi
     echo "=== OpenCL platforms (clinfo) ==="
   fi
   run_probe clinfo -l
