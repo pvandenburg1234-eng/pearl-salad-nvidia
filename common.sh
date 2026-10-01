@@ -450,36 +450,78 @@ gpu_check() {
   else
     echo "=== GPU readiness check (rocminfo) ==="
     echo "LD_LIBRARY_PATH=${LD_LIBRARY_PATH:-<unset>}"
+    ROCM_CLEAN=0
     if command -v rocminfo >/dev/null 2>&1; then
-      run_probe rocminfo
-      _rc=$?
-      ROCMINFO="$PROBE_OUT"
+      # A GPU that is slow to come up (driver still initialising under WSL)
+      # can make one rocminfo run miss it, so look up to NO_GPU_TRIES times
+      # (default 3), NO_GPU_WAIT s apart (default 20), before believing it.
+      _try=1
+      while :; do
+        run_probe rocminfo
+        _rc=$?
+        ROCMINFO="$PROBE_OUT"
+        [ "$_rc" -eq 124 ] && gpu_probe_hung rocminfo
+        GPU_DESC="$(echo "$ROCMINFO" | grep -oE 'gfx[0-9a-f]+' | head -1)"
+        [ -n "$GPU_DESC" ] && break
+        [ "$_try" -ge "${NO_GPU_TRIES:-3}" ] && break
+        echo "=== rocminfo attempt $_try: no gfx target yet (exit $_rc) - retrying in ${NO_GPU_WAIT:-20}s ==="
+        isleep "${NO_GPU_WAIT:-20}"
+        _try=$((_try + 1))
+      done
       echo "$ROCMINFO" | grep -E 'Name:|Marketing Name|gfx|HSA_STATUS' | head -20
-      [ "$_rc" -eq 124 ] && gpu_probe_hung rocminfo
-      GPU_DESC="$(echo "$ROCMINFO" | grep -oE 'gfx[0-9a-f]+' | head -1)"
+      # "Clean" = rocminfo exited 0, reported no HSA error and listed at least
+      # one agent (the CPU). Only a clean listing without a GPU is evidence of
+      # a wrong card; an erroring rocminfo is a driver problem, not proof.
+      if [ "$_rc" -eq 0 ] && ! echo "$ROCMINFO" | grep -q 'HSA_STATUS_ERROR' \
+         && echo "$ROCMINFO" | grep -q 'Vendor Name:'; then
+        ROCM_CLEAN=1
+      fi
     else
       echo "rocminfo not found in image (unexpected)"
     fi
     echo "=== GPU arch: ${GPU_DESC:-unknown} ==="
-    # No AMD GPU visible: Salad gave this AMD slot the wrong card. 30 Sep a host
-    # whose container saw only an RTX 4060 Ti kept landing in our RX 9070 XT
-    # slots (~68 TH/s at 9070 XT prices). Ask for another node.
-    #   NO_GPU_ACTION   reallocate (default) | warn
-    if [ -z "$GPU_DESC" ] && [ "${NO_GPU_ACTION:-reallocate}" = reallocate ]; then
-      echo "=== NO AMD GPU VISIBLE in an AMD slot - wrong card for this group ==="
-      if salad_reallocate "no AMD GPU visible to rocminfo (wrong GPU in an AMD slot)"; then
+    echo "=== OpenCL platforms (clinfo) ==="
+  fi
+  run_probe clinfo -l
+  _rc=$?
+  CLINFO="$PROBE_OUT"
+  echo "$CLINFO" | head -20
+  [ "$_rc" -eq 124 ] && gpu_probe_hung "clinfo"
+  if [ "$MINER_VENDOR" != nvidia ] && [ -z "$GPU_DESC" ]; then
+    # Second opinion: clinfo lists the AMD GPU as "Device #0: gfx1201".
+    GPU_DESC="$(echo "$CLINFO" | grep -oE 'Device #[0-9]+: gfx[0-9a-f]+' | grep -oE 'gfx[0-9a-f]+' | head -1)"
+    [ -n "$GPU_DESC" ] && echo "=== GPU arch from clinfo: $GPU_DESC (rocminfo missed it) ==="
+  fi
+  # Wrong card in an AMD slot: 30 Sep a host whose container saw only an RTX
+  # 4060 Ti kept landing in our RX 9070 XT slots (~68 TH/s at 9070 XT prices).
+  # On a real AMD node Salad injects the AMD runtime (librocdxg in
+  # /opt/rocm-host/lib, HSA_ENABLE_DXG_DETECTION=1, LD_LIBRARY_PATH); on that
+  # host it did not, and the NVIDIA driver was there instead. So reallocate
+  # only when ALL hold - a slow or failing AMD driver never bounces a real
+  # AMD GPU (the no-share watchdog still catches a dead one):
+  #   1. no gfx target after every rocminfo try (NO_GPU_TRIES x NO_GPU_WAIT s)
+  #   2. no gfx device in clinfo either
+  #   3. positive sign of a non-AMD node: the AMD runtime was not injected,
+  #      or an NVIDIA driver (libcuda / nvidia-smi) is present
+  #   NO_GPU_ACTION   reallocate (default) | warn
+  if [ "$MINER_VENDOR" != nvidia ] && [ -z "$GPU_DESC" ]; then
+    _amd_rt=0
+    { [ -n "${HSA_ENABLE_DXG_DETECTION:-}" ] || ls /opt/rocm-host/lib/librocdxg* >/dev/null 2>&1; } && _amd_rt=1
+    _nv=0
+    { [ -e /usr/lib/wsl/lib/libcuda.so.1 ] || [ -e /usr/lib/wsl/lib/nvidia-smi ] || command -v nvidia-smi >/dev/null 2>&1; } && _nv=1
+    echo "=== no AMD GPU found: AMD runtime injected=$_amd_rt, NVIDIA driver present=$_nv, rocminfo clean=$ROCM_CLEAN ==="
+    if { [ "$_amd_rt" = 0 ] || [ "$_nv" = 1 ]; } && [ "${NO_GPU_ACTION:-reallocate}" = reallocate ]; then
+      echo "=== WRONG CARD FOR THIS AMD SLOT - asking for another node ==="
+      if salad_reallocate "no AMD GPU (rocminfo x${NO_GPU_TRIES:-3} + clinfo; AMD runtime=$_amd_rt, NVIDIA driver=$_nv): wrong GPU in an AMD slot"; then
         isleep 180
         echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
         exit 1
       fi
       echo "=== carrying on (IMDS unavailable) ==="
+    else
+      echo "=== not reallocating: this looks like an AMD node whose GPU is not answering (or NO_GPU_ACTION=warn); the no-share watchdog decides ==="
     fi
-    echo "=== OpenCL platforms (clinfo) ==="
   fi
-  run_probe clinfo -l
-  _rc=$?
-  echo "$PROBE_OUT" | head -20
-  [ "$_rc" -eq 124 ] && gpu_probe_hung "clinfo"
   return 0
 }
 
