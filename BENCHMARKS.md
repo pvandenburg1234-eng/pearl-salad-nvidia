@@ -31,7 +31,7 @@ each section. Update this file whenever a bench run finishes.
 | Salad GPU class | `MINERS=` | Best effective TH/s seen | Basis |
 |---|---|---|---|
 | RX 9070 XT | `bz` | ~124 (126 reported) | bench + 25-49 hosts sustained |
-| RX 9060 XT | `krig` | ~49-52 | bench + 7 hosts sustained |
+| RX 9060 XT | `bz` (100.41+) | ~68 (69 reported) | bench 1 Oct, host dd2f72ba (krig 47.0); krig ~49-52 on 7 hosts before |
 | RX 7900 XTX | `srb` | ~54 | one host |
 | RTX 5090 | `krig` | ~410 | bench + 6 hosts sustained |
 | RTX 5080 | `krig` (tie with bz) | ~221 | one host, full 360 W |
@@ -82,6 +82,10 @@ miner software has moved well past them.
 | 2026-09-24 | BzMiner 100.36 | 34 falling to 29 | 0 shares |
 | 2026-09-24 | WildRig 0.51.2 | - | does not hash under ROCm OpenCL (`n/a TH/s`) |
 | 2026-09-27 | krig (fleet) | 48.6-51.6 | 7 hosts at **2 vCPU / 8 GB**, no difference from 4 vCPU |
+| 2026-10-01 | **BzMiner 100.41** | **69.0** | bench (`pearl-salad-bench:v1.4.7`, host dd2f72ba, Lowest), 4 shares in 5 min; 100.36 had done 34 -> 29 with 0 shares |
+| 2026-10-01 | krig-miner 1.5.3 | 47.0 | same bench, 1 share (0 % devfee on Kryptex confirmed in its log) |
+| 2026-10-01 | SRBMiner 3.7.1 | 41.7 | same bench, 0 shares |
+| 2026-10-01 | WildRig 0.51.3 | - | finds the card (gfx1200) but `n/a TH/s` for 5 min, as 0.51.2 |
 
 ### RX 7900 XTX (gfx1100, RDNA 3)
 
