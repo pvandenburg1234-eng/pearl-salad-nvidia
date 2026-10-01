@@ -121,9 +121,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # the build because the archive layout changed.
 
 # --- 1. krig-miner (Kryptex) -------------------------------------------------
-ARG KRIG_VERSION=1.5.2
+# 1.5.3 (30 Sep): 0 % devfee on Kryptex, 3 % on other pools; no Pearl speed
+# change. Same linux-x64 archive as the AMD image. SHA-256s in this file are the
+# GitHub release asset digests.
+ARG KRIG_VERSION=1.5.3
+ARG KRIG_SHA256=438752a8c9878d37340fcc2e77c540c83b49130d6ce3802bf02b7e4a107698f2
 RUN wget -qO /tmp/krig.tgz \
       https://github.com/kryptex/krig-miner/releases/download/v${KRIG_VERSION}/krig-miner-${KRIG_VERSION}-linux-x64.tar.gz \
+ && echo "${KRIG_SHA256}  /tmp/krig.tgz" | sha256sum -c - \
  && mkdir -p /tmp/krig && tar xzf /tmp/krig.tgz -C /tmp/krig \
  && bin="$(find /tmp/krig -type f -name 'krig-miner*' ! -name '*.txt' ! -name '*.md' | head -1)" \
  && [ -n "$bin" ] && mv "$(dirname "$bin")" /opt/krig \
@@ -132,10 +137,10 @@ RUN wget -qO /tmp/krig.tgz \
  && ls -la /opt/krig
 
 # --- 2. SRBMiner-MULTI ------------------------------------------------------
-# 3.7.0 (28 Sep): +5-6 % pearlhash on an RTX 5080 Laptop vs 3.6.9, same power.
-# SHA-256 from the GitHub release asset digest.
-ARG SRB_VERSION=3.7.0
-ARG SRB_SHA256=92986002a213f23fff69aebe5f9a582f15d1fe51cecef4a30b3cd82fca6fc716
+# 3.7.1 (29 Sep): Quantus on AMD/Intel, nothing for Pearl on NVIDIA; 3.7.0
+# (28 Sep): +5-6 % pearlhash on an RTX 5080 Laptop vs 3.6.9, same power.
+ARG SRB_VERSION=3.7.1
+ARG SRB_SHA256=9d8699a9e3bbce5ba6aae30298be25eecee8cf5910abb65feee27f2b40762de9
 RUN wget -qO /tmp/srb.tgz \
       https://github.com/doktor83/SRBMiner-Multi/releases/download/${SRB_VERSION}/SRBMiner-Multi-$(echo ${SRB_VERSION} | tr . -)-Linux.tar.gz \
  && echo "${SRB_SHA256}  /tmp/srb.tgz" | sha256sum -c - \
@@ -146,10 +151,10 @@ RUN wget -qO /tmp/srb.tgz \
  && ls -la /opt/srb
 
 # --- 3. BzMiner --------------------------------------------------------------
-# 100.40 (26 Sep): "Big Nvidia & AMD pearl optimizations". SHA-256 from the
-# GitHub release asset digest.
-ARG BZ_VERSION=100.40
-ARG BZ_SHA256=ce819865c7fc114b4c967bb0878bf8adaa5c09489348b89f5093813bfef49c6b
+# 100.41 (1 Oct): "minor pearl improvements to all amd's"; 100.40 (26 Sep):
+# "Big Nvidia & AMD pearl optimizations".
+ARG BZ_VERSION=100.41
+ARG BZ_SHA256=701b0cc906546e156a0166cc2cd27aeaff11ef93c83f5951a02ffe0eb29d11e5
 RUN wget -qO /tmp/bz.tgz \
       https://github.com/bzminer/bzminer/releases/download/v${BZ_VERSION}/bzminer_v${BZ_VERSION}_linux.tar.gz \
  && echo "${BZ_SHA256}  /tmp/bz.tgz" | sha256sum -c - \
