@@ -72,6 +72,16 @@ and the laptops; **BzMiner** wins on the RX 9070 XT. RTX 4090 benched 30 Sep on 
 Public references at the time: WhatToMine 70, Kryptex device page 98.5. The
 miner software has moved well past them.
 
+
+**BzMiner 100.41 (1 Oct, `pearl-salad:v1.4.7`), same-host before/after:**
+
+| Host | Before | After (100.41) | Gain |
+|---|---|---|---|
+| 9e92f789 | 100.36: median 129.3 (465 readings, ~8 h) | 133.5 (8 readings, 133.1-133.8) | +3.2 % |
+| 780657ae | 100.40: median 150.7 (419 readings, 7 h) | 152.8 (15 readings, 152.3-153.4) | +1.4 % |
+
+Every 100.41 reading sat above the host's best on the old version. Image switches kept the same host both times (~3 min of mining lost).
+
 ### RX 9060 XT (gfx1200, RDNA 4)
 
 | Date | Miner | Reported TH/s | Notes |
