@@ -382,6 +382,114 @@ host_check_tick() {
 }
 
 # ---------------------------------------------------------------------------
+# Hashrate floor (3 Oct 2026). A host can pass every check above - full power
+# limit, cool, pool reachable, shares accepted - and still hash at a fraction
+# of its class: on 3 Oct two RTX 5090s at 575 W of 575 W mined 37 and 65 TH/s
+# (class ~385) for 20 min and over an hour, billed in full. Once the miner has
+# its first accepted share, this takes the median of the miner's own reported
+# rate per window and asks Salad for another node when it stays below the
+# floor for the card's class.
+# Floors are ~75 % of what we measured per class (BENCHMARKS.md /
+# HASHRATES.md): an ordinary card, or one its owner capped to ~80 %, passes;
+# a broken or crippled host does not. Classes we never measured get no floor.
+#   HASHRATE_MIN      floor in TH/s for this group, overriding the class table
+#                     (0 disables the check)
+#   HASHRATE_WARMUP   seconds after the first accepted share before measuring (300)
+#   HASHRATE_WINDOW   seconds per measurement window (300)
+#   HASHRATE_GRACE    consecutive windows below the floor before acting (2)
+#   HASHRATE_ACTION   reallocate (default) | warn
+# A window with fewer than 3 readings (pool outage, miner reconnecting -
+# zero rates are not readings) is not judged either way.
+# Usage, from the miner loop once the miner is confirmed, BEFORE the miner
+# log is truncated: hashrate_floor_tick MINER_NAME PIPELINE_PID MINER_LOG
+# ---------------------------------------------------------------------------
+hashrate_class_floor() {
+  case "$1" in
+    gfx1201) echo 95 ;;                       # RX 9070 XT  ~129 (fleet 100-153)
+    gfx1200) echo 55 ;;                       # RX 9060 XT  ~72
+    gfx1100) echo 40 ;;                       # RX 7900 XTX ~50-55
+    *"5090 Laptop"*) echo 95 ;;               # ~116-128
+    *5090*) echo 300 ;;                       # ~380-415 (80 %-capped ~340)
+    *"5080 Laptop"*) echo 75 ;;               # ~100-125
+    *5080*) echo 165 ;;                       # ~210-223
+    *"5070 Ti Laptop"*) echo 65 ;;            # ~89
+    *"5070 Ti"*) echo 135 ;;                  # ~180-190
+    *"5070 Laptop"*) echo "" ;;               # never measured
+    *5070*) echo 95 ;;                        # ~128
+    *"5060 Ti"*) echo 70 ;;                   # ~94
+    *"4090 Laptop"*) echo 85 ;;               # ~110-140
+    *4090*) echo 210 ;;                       # ~267-294
+    *"4080 Laptop"*) echo 75 ;;               # ~99-125
+    *4080*) echo 145 ;;                       # ~191
+    *"4070 Ti SUPER"*|*"4070 Ti Super"*) echo 120 ;;   # ~163
+    *"4070 Ti"*) echo 115 ;;                  # ~158
+    *"4070 Laptop"*) echo "" ;;               # never measured
+    *4070*) echo 80 ;;                        # ~105
+    *"4060 Ti"*) echo 62 ;;                   # ~85
+    *"3090 Ti"*) echo 115 ;;                  # ~152
+    *3090*) echo 90 ;;                        # ~121
+    *"3080 Ti"*|*"3080 Laptop"*) echo "" ;;   # only power-limited hosts measured
+    *3080*) echo 85 ;;                        # ~113
+    *"3060 Ti"*) echo 48 ;;                   # ~65
+    *) echo "" ;;
+  esac
+}
+HR_FLOOR=""; HR_T0=0; HR_NEXT=0; HR_BAD=0; HR_OFF=0; HR_OK_NOTED=0; HR_FILE="${HR_FILE:-/tmp/hashrate-window.log}"
+hashrate_floor_tick() {
+  [ "$HR_OFF" = 1 ] && return 0
+  now="$(date +%s)"
+  warm="${HASHRATE_WARMUP:-300}"; win="${HASHRATE_WINDOW:-300}"; grace="${HASHRATE_GRACE:-2}"
+  if [ "$HR_T0" = 0 ]; then
+    HR_FLOOR="${HASHRATE_MIN:-$(hashrate_class_floor "${GPU_DESC:-}")}"
+    case "$HR_FLOOR" in
+      ''|0|0.0) echo "=== hashrate floor: none for ${GPU_DESC:-unknown GPU}${HASHRATE_MIN:+ (HASHRATE_MIN=$HASHRATE_MIN)} - not checked ==="; HR_OFF=1; return 0 ;;
+      *[!0-9.]*) echo "=== hashrate floor: HASHRATE_MIN=$HR_FLOOR is not a number - not checked ==="; HR_OFF=1; return 0 ;;
+    esac
+    HR_T0="$now"; HR_NEXT=$((now + warm + win))
+    : > "$HR_FILE"
+    echo "=== hashrate floor: ${HR_FLOOR} TH/s for ${GPU_DESC:-?} (${HASHRATE_MIN:+HASHRATE_MIN}${HASHRATE_MIN:-class table}) - median of ${win}s windows from ${warm}s after the first share; acts after ${grace} low window(s) ==="
+    return 0
+  fi
+  # Warm-up readings are thrown away; after that every pass adds the miner's
+  # new lines to the window file.
+  [ $((now - HR_T0)) -ge "$warm" ] && cat "$3" >> "$HR_FILE" 2>/dev/null
+  [ "$now" -lt "$HR_NEXT" ] && return 0
+  HR_NEXT=$((now + win))
+  r="$(parse_hashrate "$HR_FILE" 0)"
+  : > "$HR_FILE"
+  med="${r% *}"; n="${r#* }"
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  if [ "$n" -lt 3 ]; then
+    echo "=== hashrate floor: only $n reading(s) in the last ${win}s (pool or miner not reporting) - window not judged ==="
+    return 0
+  fi
+  if awk -v m="$med" -v f="$HR_FLOOR" 'BEGIN { exit (m < f) ? 0 : 1 }'; then
+    HR_BAD=$((HR_BAD + 1))
+    echo "=== hashrate floor: median ${med} TH/s over $n readings < floor ${HR_FLOOR} - low window ${HR_BAD}/${grace} ==="
+    if [ "$HR_BAD" -ge "$grace" ]; then
+      echo "=== HOST HASHES BELOW ITS CLASS: ${med} TH/s < ${HR_FLOOR} TH/s for ${GPU_DESC:-this GPU}, ${HR_BAD} windows in a row ==="
+      if [ "${HASHRATE_ACTION:-reallocate}" = reallocate ]; then
+        if salad_reallocate "hashrate ${med} TH/s below the ${HR_FLOOR} TH/s floor for ${GPU_DESC:-this GPU}"; then
+          [ -n "${2:-}" ] && kill_miner "$1" "$2"
+          isleep 180
+          echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+          exit 1
+        fi
+      fi
+      echo "=== continuing below the floor (HASHRATE_ACTION=${HASHRATE_ACTION:-reallocate}, IMDS unavailable or action=warn); floor check off ==="
+      HR_OFF=1
+    fi
+  else
+    [ "$HR_BAD" -gt 0 ] && echo "=== hashrate floor: back above the floor - median ${med} TH/s over $n readings ==="
+    HR_BAD=0
+    if [ "$HR_OK_NOTED" = 0 ]; then
+      HR_OK_NOTED=1
+      echo "=== hashrate floor: median ${med} TH/s over $n readings >= ${HR_FLOOR} - ok (only changes are logged from now on) ==="
+    fi
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # GPU probes with a deadline. On a host whose GPU driver is stuck, clinfo /
 # rocminfo / nvidia-smi can block forever inside the driver: 30 Sep a 9070 XT
 # sat at "OpenCL platforms (clinfo)" for 1 h 50 min, "running" and billed to
