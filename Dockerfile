@@ -151,10 +151,11 @@ RUN wget -qO /tmp/srb.tgz \
  && ls -la /opt/srb
 
 # --- 3. BzMiner --------------------------------------------------------------
-# 100.41 (1 Oct): "minor pearl improvements to all amd's"; 100.40 (26 Sep):
-# "Big Nvidia & AMD pearl optimizations".
-ARG BZ_VERSION=100.41
-ARG BZ_SHA256=701b0cc906546e156a0166cc2cd27aeaff11ef93c83f5951a02ffe0eb29d11e5
+# 100.45 (2 Oct): "improvements (~2%) on pearl for nvidia" and "fixed an issue with
+# pools being unable to reconnect"; does not hash on Ada (sm_89) - keep bz out of
+# 4090/4080/4070 groups. 100.40 (26 Sep): "Big Nvidia & AMD pearl optimizations".
+ARG BZ_VERSION=100.45
+ARG BZ_SHA256=e52cceefb78b88dd57197dd833c17424fa40644b7d49b4c194f74efeb3d5054c
 RUN wget -qO /tmp/bz.tgz \
       https://github.com/bzminer/bzminer/releases/download/v${BZ_VERSION}/bzminer_v${BZ_VERSION}_linux.tar.gz \
  && echo "${BZ_SHA256}  /tmp/bz.tgz" | sha256sum -c - \
