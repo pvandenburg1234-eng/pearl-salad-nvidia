@@ -530,6 +530,39 @@ gpu_probe_hung() {
   echo "=== carrying on (IMDS unavailable); the miner will probably fail on this host ==="
 }
 
+# GPU class check: the card must be the one the group pays for. Salad does not
+# tell a container its group's GPU class, so each group says it in EXPECT_GPU,
+# a case-insensitive extended regex matched against what gpu_check found: the
+# nvidia-smi name on NVIDIA ("NVIDIA GeForce RTX 5090"), the gfx target plus
+# rocminfo's marketing names on AMD ("gfx1201 AMD Radeon RX 9070 XT").
+#   EXPECT_GPU         e.g. 'RTX 5090$' (desktop only: plain 5090 also matches "5090 Laptop GPU"),
+#                      '5090$|4090$', gfx1201 (RX 9070 XT), gfx1200 (RX 9060 XT); unset = no check
+#   EXPECT_GPU_ACTION  reallocate (default) | warn
+# 4 Oct 2026: Salad gave the same host with an RTX 3060 (170 W, ~36 TH/s) to our
+# RTX 5090-only group twice, billed as a 5090; the power check passed (100 % of
+# the 3060's own limit) and no floor knew a plain 3060.
+gpu_class_check() {
+  [ -n "${EXPECT_GPU:-}" ] || return 0
+  _seen="${GPU_DESC:-unknown}"
+  if [ "$MINER_VENDOR" != nvidia ] && [ -n "${ROCMINFO:-}" ]; then
+    _seen="$_seen $(echo "$ROCMINFO" | grep -E 'Marketing Name' | sed 's/.*Marketing Name:[[:space:]]*//' | tr -s ' ' | tr '\n' ' ')"
+  fi
+  _seen="$(printf '%s' "$_seen" | sed 's/[[:space:]]*$//')"
+  if printf '%s' "$_seen" | grep -Eiq -- "$EXPECT_GPU"; then
+    echo "=== GPU class check: OK ($(echo "$_seen" | tr -s ' ') matches EXPECT_GPU=$EXPECT_GPU) ==="
+    return 0
+  fi
+  echo "=== WRONG GPU: this node has '$(echo "$_seen" | tr -s ' ')', the group expects /$EXPECT_GPU/ ==="
+  if [ "${EXPECT_GPU_ACTION:-reallocate}" = reallocate ]; then
+    if salad_reallocate "wrong GPU class: $(echo "$_seen" | tr -s ' ') (expected $EXPECT_GPU)"; then
+      isleep 180
+      echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
+      exit 1
+    fi
+  fi
+  echo "=== continuing on the wrong GPU (EXPECT_GPU_ACTION=${EXPECT_GPU_ACTION:-reallocate}, IMDS unavailable or action=warn) ==="
+}
+
 # ---------------------------------------------------------------------------
 # GPU readiness check. Sets GPU_DESC (gfx target on AMD, card name on NVIDIA).
 # ---------------------------------------------------------------------------

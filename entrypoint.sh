@@ -27,6 +27,7 @@ LOG=/tmp/miner.log
 
 echo "=== pearl-salad ($MINER_VENDOR) image version: ${IMAGE_VERSION:-unknown} ==="
 gpu_check
+gpu_class_check
 echo "=== miner order: $MINERS ==="
 resolve_pool
 pool_check_or_reallocate
