@@ -535,26 +535,43 @@ gpu_probe_hung() {
 # a case-insensitive extended regex matched against what gpu_check found: the
 # nvidia-smi name on NVIDIA ("NVIDIA GeForce RTX 5090"), the gfx target plus
 # rocminfo's marketing names on AMD ("gfx1201 AMD Radeon RX 9070 XT").
-#   EXPECT_GPU         e.g. 'RTX 5090$' (desktop only: plain 5090 also matches "5090 Laptop GPU"),
-#                      '5090$|4090$', gfx1201 (RX 9070 XT), gfx1200 (RX 9060 XT); unset = no check
+#   EXPECT_GPU         matched per name, so $ anchors work: 'RTX 5090( D)?$' (desktop 5090 / 5090 D,
+#                      not "RTX 5090 Laptop GPU"), '(5090|4090)$', gfx1201 (RX 9070 XT), gfx1200
+#                      (RX 9060 XT); unset = no check
 #   EXPECT_GPU_ACTION  reallocate (default) | warn
 # 4 Oct 2026: Salad gave the same host with an RTX 3060 (170 W, ~36 TH/s) to our
 # RTX 5090-only group twice, billed as a 5090; the power check passed (100 % of
 # the 3060's own limit) and no floor knew a plain 3060.
+# Fail-safe: it never bounces a node on missing or bad input. No GPU identified
+# (driver slow or broken: gpu_check's own rules decide that) or an invalid
+# EXPECT_GPU pattern -> logged and skipped. Several visible GPUs -> OK if any
+# one of them matches.
 gpu_class_check() {
   [ -n "${EXPECT_GPU:-}" ] || return 0
-  _seen="${GPU_DESC:-unknown}"
-  if [ "$MINER_VENDOR" != nvidia ] && [ -n "${ROCMINFO:-}" ]; then
-    _seen="$_seen $(echo "$ROCMINFO" | grep -E 'Marketing Name' | sed 's/.*Marketing Name:[[:space:]]*//' | tr -s ' ' | tr '\n' ' ')"
-  fi
-  _seen="$(printf '%s' "$_seen" | sed 's/[[:space:]]*$//')"
-  if printf '%s' "$_seen" | grep -Eiq -- "$EXPECT_GPU"; then
-    echo "=== GPU class check: OK ($(echo "$_seen" | tr -s ' ') matches EXPECT_GPU=$EXPECT_GPU) ==="
+  printf 'x\n' | grep -Eiq -- "$EXPECT_GPU" 2>/dev/null
+  if [ $? -eq 2 ]; then
+    echo "=== GPU class check skipped: EXPECT_GPU='$EXPECT_GPU' is not a valid extended regex ==="
     return 0
   fi
-  echo "=== WRONG GPU: this node has '$(echo "$_seen" | tr -s ' ')', the group expects /$EXPECT_GPU/ ==="
+  if [ -z "${GPU_DESC:-}" ]; then
+    echo "=== GPU class check skipped: no GPU identified (the readiness checks above decide what to do) ==="
+    return 0
+  fi
+  # one name per line: every NVIDIA card nvidia-smi listed; on AMD the gfx target
+  # plus rocminfo's marketing names (those include the CPU - harmless for gfx/RX patterns)
+  if [ "$MINER_VENDOR" = nvidia ]; then
+    _names="${GPU_NAMES:-$GPU_DESC}"
+  else
+    _names="$(printf '%s\n' "$GPU_DESC"; echo "${ROCMINFO:-}" | grep -E 'Marketing Name' | sed 's/.*Marketing Name:[[:space:]]*//; s/[[:space:]]*$//')"
+  fi
+  _seen="$(printf '%s\n' "$_names" | sed '/^[[:space:]]*$/d' | tr -s ' ' | paste -sd ',' - | sed 's/,/, /g')"
+  if printf '%s\n' "$_names" | sed 's/[[:space:]]*$//' | grep -Eiq -- "$EXPECT_GPU"; then
+    echo "=== GPU class check: OK ($_seen matches EXPECT_GPU=$EXPECT_GPU) ==="
+    return 0
+  fi
+  echo "=== WRONG GPU: this node has '$_seen', the group expects /$EXPECT_GPU/ ==="
   if [ "${EXPECT_GPU_ACTION:-reallocate}" = reallocate ]; then
-    if salad_reallocate "wrong GPU class: $(echo "$_seen" | tr -s ' ') (expected $EXPECT_GPU)"; then
+    if salad_reallocate "wrong GPU class: $_seen (expected $EXPECT_GPU)"; then
       isleep 180
       echo "=== still here after 180s - Salad did not stop us; exiting so the group restarts ==="
       exit 1
@@ -567,7 +584,7 @@ gpu_class_check() {
 # GPU readiness check. Sets GPU_DESC (gfx target on AMD, card name on NVIDIA).
 # ---------------------------------------------------------------------------
 gpu_check() {
-  GPU_DESC=""
+  GPU_DESC=""; GPU_NAMES=""
   if [ "$MINER_VENDOR" = nvidia ]; then
     echo "=== GPU readiness check (nvidia-smi) ==="
     echo "NVIDIA_VISIBLE_DEVICES=${NVIDIA_VISIBLE_DEVICES:-<unset>}  NVIDIA_DRIVER_CAPABILITIES=${NVIDIA_DRIVER_CAPABILITIES:-<unset>}"
@@ -579,6 +596,7 @@ gpu_check() {
         gpu_probe_hung nvidia-smi
       elif [ "$_rc" -eq 0 ]; then
         GPU_DESC="$(echo "$PROBE_OUT" | head -1 | awk -F', *' '{print $1}')"
+        GPU_NAMES="$(echo "$PROBE_OUT" | awk -F', *' 'NF { print $1 }')"   # every card, for gpu_class_check
         nvidia_power_check
       else
         echo "nvidia-smi failed - the host driver was not injected. Is this an NVIDIA GPU class?"

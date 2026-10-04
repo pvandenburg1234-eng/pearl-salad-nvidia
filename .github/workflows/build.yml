@@ -29,7 +29,19 @@ permissions:
   packages: write
 
 jobs:
+  # Shell tests of the entrypoint logic, under dash (the images' /bin/sh), before any image is built.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax (dash -n)
+        run: dash -n common.sh && dash -n entrypoint.sh
+      - name: GPU class check (EXPECT_GPU)
+        run: dash tests/gpu-class-check.sh
+
   build:
+    needs: test
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
