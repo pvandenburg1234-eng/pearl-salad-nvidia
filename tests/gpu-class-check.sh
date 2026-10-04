@@ -11,11 +11,17 @@ REALLOC_OK=0
 salad_reallocate() { echo "STUB-REALLOCATE: $1"; return "$REALLOC_OK"; }
 
 fails=0
-# case NAME EXPECT(ok|wrong|skip|none) VENDOR GPU_DESC GPU_NAMES ROCMINFO EXPECT_GPU [ACTION] [REALLOC_RC]
+# stub nvidia-smi for the AMD-image fallback: prints the 4060 Ti seen in our 9070 XT slots
+stubdir="$(mktemp -d)"; trap 'rm -rf "$stubdir"' EXIT
+printf '#!/bin/sh\necho "NVIDIA GeForce RTX 4060 Ti"\n' > "$stubdir/nvidia-smi"; chmod +x "$stubdir/nvidia-smi"
+printf '#!/bin/sh\nexit 9\n' > "$stubdir/nvidia-smi-broken"; chmod +x "$stubdir/nvidia-smi-broken"
+# case NAME EXPECT(ok|wrong|skip|none) VENDOR GPU_DESC GPU_NAMES ROCMINFO EXPECT_GPU [ACTION] [REALLOC_RC] [SMI]
+# SMI: path of the nvidia-smi the check may call (default: a path that does not exist = none)
 case_() {
   name=$1; want=$2
   out="$(MINER_VENDOR=$3 GPU_DESC=$4 GPU_NAMES=$5 ROCMINFO=$6 EXPECT_GPU=$7 EXPECT_GPU_ACTION=${8:-reallocate} REALLOC_OK=${9:-0} \
-    sh -c 'eval "$(sed -n "/^gpu_class_check() {/,/^}/p" "$1/common.sh")"; isleep() { :; }; salad_reallocate() { echo "STUB-REALLOCATE: $1"; return "$REALLOC_OK"; }; gpu_class_check; echo "RC-AFTER"' _ "$here" 2>&1)"
+    GPU_CLASS_SMI=${10:-/nonexistent/nvidia-smi} PATH=/usr/bin:/bin \
+    sh -c 'eval "$(sed -n "/^gpu_class_check() {/,/^}/p" "$1/common.sh")"; isleep() { :; }; salad_reallocate() { echo "STUB-REALLOCATE: $1"; return "$REALLOC_OK"; }; run_probe() { PROBE_OUT="$("$@" 2>&1)"; }; gpu_class_check; echo "RC-AFTER"' _ "$here" 2>&1)"
   rc=$?
   got=none
   case "$out" in *"GPU class check: OK"*) got=ok ;; *"WRONG GPU"*) got=wrong ;; *"GPU class check skipped"*) got=skip ;; esac
@@ -56,6 +62,9 @@ case_ "CPU name does not satisfy a GPU pattern"       wrong amd "gfx1200" "" "$R
 case_ "wrong card, warn -> logged, keeps running"     wrong nvidia "NVIDIA GeForce RTX 3060" "NVIDIA GeForce RTX 3060" "" "$P5090" warn
 case_ "wrong card, IMDS down -> logged, keeps running" wrong nvidia "NVIDIA GeForce RTX 3060" "NVIDIA GeForce RTX 3060" "" "$P5090" reallocate 1
 case_ "no EXPECT_GPU -> no check at all"              none  nvidia "NVIDIA GeForce RTX 3060" "NVIDIA GeForce RTX 3060" "" ""
+case_ "AMD slot, 4060 Ti host (no gfx, nvidia-smi names it) -> reallocate" wrong amd "" "" "" "gfx1201" reallocate 0 "$stubdir/nvidia-smi"
+case_ "AMD slot, no gfx, nvidia-smi present but failing -> skip"          skip  amd "" "" "" "gfx1201" reallocate 0 "$stubdir/nvidia-smi-broken"
+case_ "AMD slot, real 9070 XT with nvidia-smi around -> ok (gfx wins)"    ok    amd "gfx1201" "" "$R9070" "gfx1201" reallocate 0 "$stubdir/nvidia-smi"
 
 if [ "$fails" -gt 0 ]; then echo "$fails case(s) failed"; exit 1; fi
 echo "all gpu_class_check cases passed"

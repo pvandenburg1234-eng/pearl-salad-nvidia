@@ -553,7 +553,19 @@ gpu_class_check() {
     echo "=== GPU class check skipped: EXPECT_GPU='$EXPECT_GPU' is not a valid extended regex ==="
     return 0
   fi
-  if [ -z "${GPU_DESC:-}" ]; then
+  # AMD image, no AMD chip found: an NVIDIA card it can name is a positive identification
+  # of the wrong card (29 Sep - 3 Oct: an RTX 4060 Ti host kept landing in our 9070 XT
+  # slots and BzMiner mined it through CUDA at ~67 TH/s, billed as a 9070 XT).
+  _amd_nv=""
+  if [ "$MINER_VENDOR" != nvidia ] && [ -z "${GPU_DESC:-}" ]; then
+    _smi="${GPU_CLASS_SMI:-}"
+    [ -z "$_smi" ] && _smi="$(command -v nvidia-smi 2>/dev/null)"
+    [ -z "$_smi" ] && [ -x /usr/lib/wsl/lib/nvidia-smi ] && _smi=/usr/lib/wsl/lib/nvidia-smi
+    if [ -n "$_smi" ] && run_probe "$_smi" --query-gpu=name --format=csv,noheader; then
+      _amd_nv="$(printf '%s\n' "$PROBE_OUT" | grep -i 'nvidia\|geforce\|rtx\|gtx' | sed 's/[[:space:]]*$//')"
+    fi
+  fi
+  if [ -z "${GPU_DESC:-}" ] && [ -z "$_amd_nv" ]; then
     echo "=== GPU class check skipped: no GPU identified (the readiness checks above decide what to do) ==="
     return 0
   fi
@@ -561,6 +573,8 @@ gpu_class_check() {
   # plus rocminfo's marketing names (those include the CPU - harmless for gfx/RX patterns)
   if [ "$MINER_VENDOR" = nvidia ]; then
     _names="${GPU_NAMES:-$GPU_DESC}"
+  elif [ -n "$_amd_nv" ]; then
+    _names="$_amd_nv"
   else
     _names="$(printf '%s\n' "$GPU_DESC"; echo "${ROCMINFO:-}" | grep -E 'Marketing Name' | sed 's/.*Marketing Name:[[:space:]]*//; s/[[:space:]]*$//')"
   fi
