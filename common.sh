@@ -206,8 +206,8 @@ check_wallet() {
     echo "ERROR: set the WALLET environment variable in your SaladCloud container group." >&2
     exit 1
   fi
-  case "$WALLET" in
-    prl1*) ;;
+  case "${KRIG_COIN:-pearl}:$WALLET" in
+    pearl:prl1*|prl:prl1*|pearlhash:prl1*|quantus:*|qtc:*) ;;
     *) echo "WARNING: Pearl mainnet addresses start with 'prl1p'. WALLET='$WALLET' looks wrong - pools will reject it." >&2 ;;
   esac
   WORKER_NAME="${SALAD_MACHINE_ID:-${WORKER:-salad01}}"
@@ -885,8 +885,9 @@ miner_cmd() {
   fi
   case "$1" in
     krig)
-      # krig's own docs use WALLET/WORKER, not WALLET.WORKER
-      echo "$MINER_ROOT/krig/krig-miner" --coin pearl -o "$KRIG_HOSTPORT" -u "$WALLET/$WORKER_NAME" -p x \
+      # krig's own docs use WALLET/WORKER, not WALLET.WORKER. KRIG_COIN: pearl (default) or
+      # quantus (QTC, e.g. POOL=stratum+ssl://qtc-us.kryptex.network:8049 and a QTC WALLET).
+      echo "$MINER_ROOT/krig/krig-miner" --coin "${KRIG_COIN:-pearl}" -o "$KRIG_HOSTPORT" -u "$WALLET/$WORKER_NAME" -p x \
         --no-tui "$krig_backend" ${KRIG_EXTRA_ARGS:-}
       ;;
     srb)
