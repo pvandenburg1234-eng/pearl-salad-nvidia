@@ -109,7 +109,11 @@ ENV IMAGE_VERSION=${IMAGE_VERSION}
 # platform list, and on Salad's NVIDIA nodes it is empty (NVIDIA ships no
 # OpenCL for WSL). The ICD file would point at libnvidia-opencl.so.1 if a
 # host ever did provide it. Nothing in the image mines through OpenCL.
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Ubuntu sources over HTTPS: some networks intercept plain HTTP (the owner's home
+# router does - a local build failed on apt on 17 Oct). The nvidia/cuda base
+# already carries ca-certificates (its own CUDA apt repo is HTTPS).
+RUN sed -i 's|http://|https://|g' /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null; \
+    apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates wget curl ocl-icd-libopencl1 clinfo procps \
     && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /etc/OpenCL/vendors \
@@ -137,10 +141,12 @@ RUN wget -qO /tmp/krig.tgz \
  && ls -la /opt/krig
 
 # --- 2. SRBMiner-MULTI ------------------------------------------------------
-# 3.7.1 (29 Sep): Quantus on AMD/Intel, nothing for Pearl on NVIDIA; 3.7.0
-# (28 Sep): +5-6 % pearlhash on an RTX 5080 Laptop vs 3.6.9, same power.
-ARG SRB_VERSION=3.7.1
-ARG SRB_SHA256=9d8699a9e3bbce5ba6aae30298be25eecee8cf5910abb65feee27f2b40762de9
+# 3.7.7 (18 Oct): "Improvements on algorithm 'pearlhash' for NVIDIA 3000, 4000 and
+# 5000 series"; 3.7.6 (14 Oct) 3000/4000; 3.7.5 (10 Oct) minor 5000; 3.7.4 (9 Oct)
+# 2000/5000; 3.7.3 (7 Oct) new kernels default on Ampere/Ada/Blackwell; 3.7.2
+# experimental. 3.7.1 (29 Sep) did 309-317 TH/s on an RTX 4090 on Runpod 18 Oct.
+ARG SRB_VERSION=3.7.7
+ARG SRB_SHA256=d5760bb9e1bf052d7749bb659f99da1813a9b55f944b0722f42dd2231105ab76
 RUN wget -qO /tmp/srb.tgz \
       https://github.com/doktor83/SRBMiner-Multi/releases/download/${SRB_VERSION}/SRBMiner-Multi-$(echo ${SRB_VERSION} | tr . -)-Linux.tar.gz \
  && echo "${SRB_SHA256}  /tmp/srb.tgz" | sha256sum -c - \
