@@ -141,12 +141,15 @@ RUN wget -qO /tmp/krig.tgz \
  && ls -la /opt/krig
 
 # --- 2. SRBMiner-MULTI ------------------------------------------------------
+# 3.7.9 (20 Oct): "Improved efficiency on algorithm 'pearlhash' for NVIDIA 5000 series"; 3.7.8 (19 Oct): improved
+# efficiency for 3000/4000/5000 and "Fixed NVIDIA 5000 series on newer drivers (615+)" (v1.6.13, 21 Oct: the user saw
+# SRBMiner not working on 5090s - assumed the 615+ driver fault; SHA-256 = GitHub's asset digest).
 # 3.7.7 (18 Oct): "Improvements on algorithm 'pearlhash' for NVIDIA 3000, 4000 and
 # 5000 series"; 3.7.6 (14 Oct) 3000/4000; 3.7.5 (10 Oct) minor 5000; 3.7.4 (9 Oct)
 # 2000/5000; 3.7.3 (7 Oct) new kernels default on Ampere/Ada/Blackwell; 3.7.2
 # experimental. 3.7.1 (29 Sep) did 309-317 TH/s on an RTX 4090 on Runpod 18 Oct.
-ARG SRB_VERSION=3.7.7
-ARG SRB_SHA256=d5760bb9e1bf052d7749bb659f99da1813a9b55f944b0722f42dd2231105ab76
+ARG SRB_VERSION=3.7.9
+ARG SRB_SHA256=f0cfca82411fdf2245422db1d5989ce3f5e5b746ec776581853af5705f2b9a7f
 RUN wget -qO /tmp/srb.tgz \
       https://github.com/doktor83/SRBMiner-Multi/releases/download/${SRB_VERSION}/SRBMiner-Multi-$(echo ${SRB_VERSION} | tr . -)-Linux.tar.gz \
  && echo "${SRB_SHA256}  /tmp/srb.tgz" | sha256sum -c - \
